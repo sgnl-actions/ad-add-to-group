@@ -47,6 +47,4 @@ outputs:
     type: datetime
     description: When the operation completed (ISO 8601)
 
-  job_id:
-    type: text
-    description: Unique job identifier
+  # Note: Job metadata is not available to scripts for security

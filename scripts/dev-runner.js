@@ -14,12 +14,6 @@ const mockContext = {
     API_KEY: 'dev-test-key-123456'
   },
   outputs: {},
-  job: {
-    id: `dev-job-${Date.now()}`,
-    type: 'job-template',
-    tenant_id: 'dev-tenant',
-    attempt_count: 1
-  },
   partial_results: {},
   current_step: 'start'
 };

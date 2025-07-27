@@ -9,11 +9,11 @@ export default {
   /**
    * Main execution handler - implement your job logic here
    * @param {Object} params - Job input parameters
-   * @param {Object} context - Execution context with env, secrets, outputs, job metadata
+   * @param {Object} context - Execution context with env, secrets, outputs
    * @returns {Object} Job results
    */
   invoke: async (params, context) => {
-    console.log(`Starting job ${context.job.id}`);
+    console.log('Starting job execution');
     console.log(`Processing target: ${params.target}`);
     console.log(`Action: ${params.action}`);
     
@@ -59,7 +59,7 @@ export default {
       options_processed: options.length,
       environment: environment,
       processed_at: new Date().toISOString(),
-      job_id: context.job.id
+      // Job completed successfully
     };
   },
 
@@ -71,7 +71,7 @@ export default {
    */
   error: async (params, context) => {
     const { error, target, action } = params;
-    console.error(`Job ${context.job.id} encountered error while processing ${target}: ${error.message}`);
+    console.error(`Job encountered error while processing ${target}: ${error.message}`);
     
     // TODO: Implement your error recovery logic
     
@@ -88,7 +88,7 @@ export default {
         recovery_method: 'rate_limit_backoff',
         original_error: error.message,
         recovered_at: new Date().toISOString(),
-        job_id: context.job.id
+        // Job completed successfully
       };
     }
     
@@ -102,7 +102,7 @@ export default {
         recovery_method: 'fallback_service',
         original_error: error.message,
         recovered_at: new Date().toISOString(),
-        job_id: context.job.id
+        // Job completed successfully
       };
     }
     
@@ -119,7 +119,7 @@ export default {
    */
   halt: async (params, context) => {
     const { reason, target } = params;
-    console.log(`Job ${context.job.id} is being halted (${reason}) while processing ${target}`);
+    console.log(`Job is being halted (${reason}) while processing ${target}`);
     
     // TODO: Implement your cleanup logic
     
@@ -140,7 +140,7 @@ export default {
       halted_at: new Date().toISOString(),
       cleanup_completed: true,
       partial_results_saved: !!context.partial_results,
-      job_id: context.job.id
+      // Job completed successfully
     };
   }
 };

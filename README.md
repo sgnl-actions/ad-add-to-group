@@ -123,18 +123,18 @@ The `context` parameter provides access to:
     // ... other secrets
   },
   outputs: {
-    "previous-job-id": {
+    "previous-job-step": {
       // ... outputs from previous jobs in workflow
     }
   },
-  job: {
-    id: "job-123",
-    type: "your-job-type", 
-    tenant_id: "tenant-abc",
-    attempt_count: 1
-  }
+  partial_results: {
+    // ... saved progress for long-running jobs
+  },
+  current_step: "start"
 }
 ```
+
+**Note**: Job metadata (ID, tenant, attempt count) is not exposed to scripts for security reasons.
 
 ## Testing
 
