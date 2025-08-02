@@ -5,7 +5,7 @@ export default {
   input: 'src/script.mjs',
   output: {
     file: 'dist/index.js',
-    format: 'es',
+    format: 'cjs',
     banner: '// SGNL Job Script - Auto-generated bundle'
   },
   plugins: [

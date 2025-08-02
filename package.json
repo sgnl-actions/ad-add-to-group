@@ -2,7 +2,7 @@
   "name": "@sgnl/job-template",
   "version": "1.0.0",
   "description": "Template for SGNL JavaScript jobs",
-  "type": "module",
+  "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
     "build": "rollup -c",
