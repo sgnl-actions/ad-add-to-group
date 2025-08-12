@@ -1,6 +1,6 @@
 # SGNL Job Template
 
-This repository provides a template for creating JavaScript jobs for the SGNL Job Service.
+This repository provides a template for creating JavaScript jobs for the SGNL's CAEP Hub.
 
 ## Quick Start
 
@@ -181,5 +181,3 @@ Reference your job in a JobSpec:
 
 ## Support
 
-- [Job Development Guide](https://github.com/SGNL-ai/job_service/blob/main/docs/JAVASCRIPT_JOB_DEVELOPMENT.md)
-- [SGNL Job Service](https://github.com/SGNL-ai/job_service)
