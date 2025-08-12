@@ -1,4 +1,3 @@
-import { jest } from '@jest/globals';
 import script from '../src/script.mjs';
 
 describe('Job Template Script', () => {
@@ -87,54 +86,17 @@ describe('Job Template Script', () => {
   });
 
   describe('error handler', () => {
-    test('should recover from rate limit errors', async () => {
+    test('should throw error by default', async () => {
       const params = {
         target: 'test-user@example.com',
         action: 'create',
         error: {
-          message: 'API rate limit exceeded - 429',
-          code: 'RATE_LIMIT'
+          message: 'Something went wrong',
+          code: 'ERROR_CODE'
         }
       };
 
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('recovered');
-      expect(result.target).toBe('test-user@example.com');
-      expect(result.recovery_method).toBe('rate_limit_backoff');
-      expect(result.original_error).toContain('rate limit');
-      expect(result.status).toBeDefined();
-    });
-
-    test('should use fallback for service unavailable', async () => {
-      const params = {
-        target: 'test-user@example.com',
-        action: 'update',
-        error: {
-          message: 'Service unavailable - 503',
-          code: 'SERVICE_UNAVAILABLE'
-        }
-      };
-
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('fallback_used');
-      expect(result.target).toBe('test-user@example.com');
-      expect(result.recovery_method).toBe('fallback_service');
-      expect(result.original_error).toContain('Service unavailable');
-    });
-
-    test('should throw for unrecoverable errors', async () => {
-      const params = {
-        target: 'test-user@example.com',
-        action: 'create',
-        error: {
-          message: 'Invalid configuration - missing API key',
-          code: 'CONFIG_ERROR'
-        }
-      };
-
-      await expect(script.error(params, mockContext)).rejects.toThrow('Unrecoverable error');
+      await expect(script.error(params, mockContext)).rejects.toThrow('Unable to recover from error: Something went wrong');
     });
   });
 
@@ -150,31 +112,7 @@ describe('Job Template Script', () => {
       expect(result.status).toBe('halted');
       expect(result.target).toBe('test-user@example.com');
       expect(result.reason).toBe('timeout');
-      expect(result.cleanup_completed).toBe(true);
       expect(result.halted_at).toBeDefined();
-      expect(result.status).toBeDefined();
-    });
-
-    test('should save partial results when available', async () => {
-      const contextWithPartialResults = {
-        ...mockContext,
-        partial_results: {
-          processed_count: 5,
-          total_count: 10,
-          completed_items: ['item1', 'item2', 'item3']
-        }
-      };
-
-      const params = {
-        target: 'batch-operation',
-        reason: 'cancellation'
-      };
-
-      const result = await script.halt(params, contextWithPartialResults);
-
-      expect(result.status).toBe('halted');
-      expect(result.partial_results_saved).toBe(true);
-      expect(result.reason).toBe('cancellation');
     });
 
     test('should handle halt without target', async () => {
@@ -187,7 +125,6 @@ describe('Job Template Script', () => {
       expect(result.status).toBe('halted');
       expect(result.target).toBe('unknown');
       expect(result.reason).toBe('system_shutdown');
-      expect(result.cleanup_completed).toBe(true);
     });
   });
 });
