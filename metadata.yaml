@@ -1,0 +1,50 @@
+name: ad-add-to-group
+description: Add a user to a group in on-premise Active Directory via LDAP
+
+# Input parameters for web form generation
+inputs:
+  userDN:
+    type: text
+    description: Distinguished Name of the user to add (e.g., CN=John Doe,OU=Users,DC=corp,DC=example,DC=com)
+    required: true
+    validation:
+      min: 1
+      max: 500
+
+  groupDN:
+    type: text
+    description: Distinguished Name of the target group (e.g., CN=Admins,OU=Groups,DC=corp,DC=example,DC=com)
+    required: true
+    validation:
+      min: 1
+      max: 500
+
+  address:
+    type: text
+    description: Optional LDAP server URL override (e.g., ldaps://ad.corp.example.com:636)
+    required: false
+    validation:
+      min: 1
+      max: 200
+
+# Expected output structure
+outputs:
+  status:
+    type: text
+    description: Operation result (success, failed, etc.)
+
+  userDN:
+    type: text
+    description: Distinguished Name of the user that was processed
+
+  groupDN:
+    type: text
+    description: Distinguished Name of the group that was processed
+
+  added:
+    type: boolean
+    description: Whether the user was newly added to the group
+
+  address:
+    type: text
+    description: The LDAP server URL that was used
