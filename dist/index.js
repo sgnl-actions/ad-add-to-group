@@ -49,9 +49,9 @@ async function addUserToGroup(userDN, groupDN, client) {
     {
       operation: 'add',
       modification: {
-        member: [userDN],
-      },
-    },
+        member: [userDN]
+      }
+    }
   ]);
 
   return { success: true };
@@ -95,7 +95,7 @@ var script = {
 
     const client = new ldapts.Client({
       url: address,
-      tlsOptions,
+      tlsOptions
     });
 
     try {
@@ -111,7 +111,7 @@ var script = {
         userDN,
         groupDN,
         added: true,
-        address,
+        address
       };
     } catch (error) {
       // LDAP error code 68: ENTRY_ALREADY_EXISTS - user is already a member
@@ -123,7 +123,7 @@ var script = {
           groupDN,
           added: false,
           message: 'User is already a member of the group',
-          address,
+          address
         };
       }
 
@@ -161,9 +161,9 @@ var script = {
       userDN: userDN || 'unknown',
       groupDN: groupDN || 'unknown',
       reason,
-      halted_at: new Date().toISOString(),
+      halted_at: new Date().toISOString()
     };
-  },
+  }
 };
 
 module.exports = script;
