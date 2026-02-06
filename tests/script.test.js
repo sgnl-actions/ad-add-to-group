@@ -198,7 +198,7 @@ describe('AD Add User to Group Script', () => {
   });
 
   describe('error handler', () => {
-    test('should re-throw error and log context', async () => {
+    test('should re-throw connection errors for framework retry', async () => {
       const errorObj = new Error('LDAP connection refused');
       const params = {
         ...defaultParams,
@@ -206,19 +206,36 @@ describe('AD Add User to Group Script', () => {
       };
 
       await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
-      expect(console.error).toHaveBeenCalledWith(
-        `User group assignment failed for user ${defaultParams.userDN} to group ${defaultParams.groupDN}: LDAP connection refused`
-      );
     });
 
-    test('should re-throw any error type', async () => {
+    test('should wrap authentication errors', async () => {
+      const errorObj = new Error('Invalid credentials');
+      const params = {
+        ...defaultParams,
+        error: errorObj
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('LDAP authentication failed');
+    });
+
+    test('should wrap permission errors', async () => {
       const errorObj = new Error('Insufficient access rights');
       const params = {
         ...defaultParams,
         error: errorObj
       };
 
-      await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
+      await expect(script.error(params, mockContext)).rejects.toThrow('Insufficient LDAP permissions');
+    });
+
+    test('should wrap not found errors', async () => {
+      const errorObj = new Error('No such object');
+      const params = {
+        ...defaultParams,
+        error: errorObj
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Resource not found');
     });
   });
 
