@@ -66,25 +66,35 @@ var script = {
    * @param {string} [params.address] - Optional LDAP server URL override
    * @param {Object} context - Execution context with env, secrets, outputs
    * @param {string} context.environment.ADDRESS - Default LDAP server URL
-   * @param {string} context.secrets.BASIC_USERNAME - Bind DN for LDAP authentication
-   * @param {string} context.secrets.BASIC_PASSWORD - Bind password for LDAP authentication
+   * @param {string} context.secrets.LDAP_BIND_DN - Bind DN for LDAP authentication
+   * @param {string} context.secrets.LDAP_BIND_PASSWORD - Bind password for LDAP authentication
    * @param {string} [context.environment.TLS_SKIP_VERIFY] - Set to 'true' to skip TLS certificate verification
    * @returns {Object} Job results
    */
   invoke: async (params, context) => {
     console.log('Starting Active Directory add user to group operation');
 
-    const { userDN, groupDN } = params;
+    const { userDN, groupDN, dry_run = false } = params;
+
+    if (dry_run) {
+      console.log('DRY RUN: No changes will be made to Active Directory');
+      return {
+        status: 'dry_run_completed',
+        userDN,
+        groupDN,
+        added: false
+      };
+    }
 
     // Get LDAP server URL using shared utility
     const address = getBaseURL(params, context);
 
     // Get bind credentials from secrets
-    const bindDN = context.secrets.BASIC_USERNAME;
-    const bindPassword = context.secrets.BASIC_PASSWORD;
+    const bindDN = context.secrets.LDAP_BIND_DN;
+    const bindPassword = context.secrets.LDAP_BIND_PASSWORD;
 
     if (!bindDN || !bindPassword) {
-      throw new Error('Missing LDAP bind credentials. Provide BASIC_USERNAME and BASIC_PASSWORD in secrets.');
+      throw new Error('Missing LDAP bind credentials. Provide LDAP_BIND_DN and LDAP_BIND_PASSWORD in secrets.');
     }
 
     // Build TLS options
@@ -141,8 +151,42 @@ var script = {
    */
   error: async (params, _context) => {
     const { error, userDN, groupDN } = params;
-    console.error(`User group assignment failed for user ${userDN} to group ${groupDN}: ${error.message}`);
+    console.error(`Failed to add user ${userDN} to group ${groupDN}: ${error.message}`);
 
+    const errorMessage = error.message.toLowerCase();
+
+    // Authentication errors (fatal - don't retry)
+    if (errorMessage.includes('invalid credentials') ||
+        errorMessage.includes('authentication') ||
+        errorMessage.includes('bind failed')) {
+      console.error('Authentication failed - check LDAP_BIND_DN and LDAP_BIND_PASSWORD');
+      throw new Error(`LDAP authentication failed: ${error.message}`);
+    }
+
+    // Connection errors (retryable)
+    if (errorMessage.includes('connection') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('econnrefused')) {
+      console.error('Connection error - may be transient, framework will retry');
+      throw error;
+    }
+
+    // Not found (fatal - don't retry)
+    if (errorMessage.includes('not found') ||
+        errorMessage.includes('no such object')) {
+      console.error('User or group not found - check userDN and groupDN');
+      throw new Error(`Resource not found: ${error.message}`);
+    }
+
+    // Insufficient permissions (fatal - don't retry)
+    if (errorMessage.includes('insufficient access') ||
+        errorMessage.includes('permission denied')) {
+      console.error('Insufficient permissions - check service account privileges');
+      throw new Error(`Insufficient LDAP permissions: ${error.message}`);
+    }
+
+    // Unknown error - re-throw for framework retry
+    console.error('Unknown error occurred, allowing framework to retry');
     throw error;
   },
 

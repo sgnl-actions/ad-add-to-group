@@ -36,8 +36,8 @@ export default {
    * @param {string} [params.address] - Optional LDAP server URL override
    * @param {Object} context - Execution context with env, secrets, outputs
    * @param {string} context.environment.ADDRESS - Default LDAP server URL
-   * @param {string} context.secrets.BASIC_USERNAME - Bind DN for LDAP authentication
-   * @param {string} context.secrets.BASIC_PASSWORD - Bind password for LDAP authentication
+   * @param {string} context.secrets.LDAP_BIND_DN - Bind DN for LDAP authentication
+   * @param {string} context.secrets.LDAP_BIND_PASSWORD - Bind password for LDAP authentication
    * @param {string} [context.environment.TLS_SKIP_VERIFY] - Set to 'true' to skip TLS certificate verification
    * @returns {Object} Job results
    */
@@ -60,11 +60,11 @@ export default {
     const address = getBaseURL(params, context);
 
     // Get bind credentials from secrets
-    const bindDN = context.secrets.BASIC_USERNAME;
-    const bindPassword = context.secrets.BASIC_PASSWORD;
+    const bindDN = context.secrets.LDAP_BIND_DN;
+    const bindPassword = context.secrets.LDAP_BIND_PASSWORD;
 
     if (!bindDN || !bindPassword) {
-      throw new Error('Missing LDAP bind credentials. Provide BASIC_USERNAME and BASIC_PASSWORD in secrets.');
+      throw new Error('Missing LDAP bind credentials. Provide LDAP_BIND_DN and LDAP_BIND_PASSWORD in secrets.');
     }
 
     // Build TLS options
@@ -129,7 +129,7 @@ export default {
     if (errorMessage.includes('invalid credentials') ||
         errorMessage.includes('authentication') ||
         errorMessage.includes('bind failed')) {
-      console.error('Authentication failed - check BASIC_USERNAME and BASIC_PASSWORD');
+      console.error('Authentication failed - check LDAP_BIND_DN and LDAP_BIND_PASSWORD');
       throw new Error(`LDAP authentication failed: ${error.message}`);
     }
 

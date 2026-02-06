@@ -21,8 +21,8 @@ This action uses LDAP Simple Bind authentication with a service account.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `BASIC_USERNAME` | Secret | Yes | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com`) |
-| `BASIC_PASSWORD` | Secret | Yes | Password for the service account |
+| `LDAP_BIND_DN` | Secret | Yes | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com`) |
+| `LDAP_BIND_PASSWORD` | Secret | Yes | Password for the service account |
 
 ### Environment Variables
 
@@ -80,8 +80,8 @@ This action uses LDAP Simple Bind authentication with a service account.
     "ADDRESS": "ldaps://ad.corp.example.com:636"
   },
   "secrets": {
-    "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
-    "BASIC_PASSWORD": "your-service-account-password"
+    "LDAP_BIND_DN": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
+    "LDAP_BIND_PASSWORD": "your-service-account-password"
   }
 }
 ```
@@ -108,8 +108,8 @@ For environments with self-signed certificates:
     "TLS_SKIP_VERIFY": "true"
   },
   "secrets": {
-    "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
-    "BASIC_PASSWORD": "your-service-account-password"
+    "LDAP_BIND_DN": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
+    "LDAP_BIND_PASSWORD": "your-service-account-password"
   }
 }
 ```
@@ -188,7 +188,7 @@ npm run lint
 ### Common Issues
 
 1. **"Missing LDAP bind credentials"**
-   - Ensure `BASIC_USERNAME` and `BASIC_PASSWORD` are set in secrets
+   - Ensure `LDAP_BIND_DN` and `LDAP_BIND_PASSWORD` are set in secrets
    - Verify the bind DN is a valid Distinguished Name
 
 2. **"No URL specified"**

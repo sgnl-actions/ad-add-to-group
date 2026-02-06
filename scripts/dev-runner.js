@@ -8,11 +8,12 @@ import script from '../src/script.mjs';
 
 const mockContext = {
   environment: {
-    ADDRESS: 'ldaps://ad.corp.example.com:636'
+    ADDRESS: 'ldaps://ad.corp.example.com:636',
+    // TLS_SKIP_VERIFY: 'true',  // Uncomment to skip TLS certificate verification
   },
   secrets: {
-    BASIC_USERNAME: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com',
-    BASIC_PASSWORD: 'password'
+    LDAP_BIND_DN: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com',
+    LDAP_BIND_PASSWORD: 'password'
   },
   outputs: {},
   partial_results: {},
@@ -21,7 +22,8 @@ const mockContext = {
 
 const mockParams = {
   userDN: 'CN=John Doe,OU=Users,DC=corp,DC=example,DC=com',
-  groupDN: 'CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com'
+  groupDN: 'CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com',
+  dry_run: true,  // Set to false to actually add user to group
 };
 
 async function runDev() {

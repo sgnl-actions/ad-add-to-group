@@ -28,8 +28,8 @@ describe('AD Add User to Group Script', () => {
       ADDRESS: 'ldaps://ad.corp.example.com:636'
     },
     secrets: {
-      BASIC_USERNAME: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com',
-      BASIC_PASSWORD: 'test-password'
+      LDAP_BIND_DN: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com',
+      LDAP_BIND_PASSWORD: 'test-password'
     }
   };
 
@@ -125,11 +125,11 @@ describe('AD Add User to Group Script', () => {
       expect(mockUnbind).toHaveBeenCalled();
     });
 
-    test('should throw when BASIC_USERNAME is missing', async () => {
+    test('should throw when LDAP_BIND_DN is missing', async () => {
       const contextMissingUsername = {
         ...mockContext,
         secrets: {
-          BASIC_PASSWORD: 'test-password'
+          LDAP_BIND_PASSWORD: 'test-password'
         }
       };
 
@@ -138,11 +138,11 @@ describe('AD Add User to Group Script', () => {
       );
     });
 
-    test('should throw when BASIC_PASSWORD is missing', async () => {
+    test('should throw when LDAP_BIND_PASSWORD is missing', async () => {
       const contextMissingPassword = {
         ...mockContext,
         secrets: {
-          BASIC_USERNAME: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com'
+          LDAP_BIND_DN: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com'
         }
       };
 
