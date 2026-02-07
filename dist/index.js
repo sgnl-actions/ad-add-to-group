@@ -34,24 +34,41 @@ function getBaseURL(params, context) {
  * Active Directory Add User to Group Action
  *
  * Adds a user to a group in on-premise Active Directory using LDAP/LDAPS.
+ * If the user is already a member, returns success with added=false.
  */
 
 
 /**
- * Helper function to add a user to a group in Active Directory
- * @param {string} userDN - Distinguished Name of the user
+ * Safely disconnect from LDAP server.
+ * Errors during unbind are logged but not thrown to avoid masking original errors.
+ *
+ * @param {Client} client - The ldapts client
+ */
+async function safeUnbind(client) {
+  try {
+    await client.unbind();
+  } catch (unbindError) {
+    console.warn(`Warning: Error during LDAP unbind: ${unbindError.message}`);
+  }
+}
+
+/**
+ * Add a user to a group in Active Directory by modifying the group's member attribute.
+ *
+ * @param {string} userDN - Distinguished Name of the user to add
  * @param {string} groupDN - Distinguished Name of the group
  * @param {Client} client - Bound ldapts Client instance
  * @returns {Promise<{success: boolean}>}
  */
 async function addUserToGroup(userDN, groupDN, client) {
   await client.modify(groupDN, [
-    {
+    new ldapts.Change({
       operation: 'add',
-      modification: {
-        member: [userDN]
-      }
-    }
+      modification: new ldapts.Attribute({
+        type: 'member',
+        values: [userDN]
+      })
+    })
   ]);
 
   return { success: true };
@@ -59,23 +76,32 @@ async function addUserToGroup(userDN, groupDN, client) {
 
 var script = {
   /**
-   * Main execution handler - adds a user to a group in on-premise Active Directory
+   * Main execution handler - adds a user to a group in Active Directory.
+   *
    * @param {Object} params - Job input parameters
-   * @param {string} params.userDN - Distinguished Name of the user
+   * @param {string} params.userDN - Distinguished Name of the user to add
    * @param {string} params.groupDN - Distinguished Name of the group
    * @param {string} [params.address] - Optional LDAP server URL override
-   * @param {Object} context - Execution context with env, secrets, outputs
-   * @param {string} context.environment.ADDRESS - Default LDAP server URL
-   * @param {string} context.secrets.LDAP_BIND_DN - Bind DN for LDAP authentication
-   * @param {string} context.secrets.LDAP_BIND_PASSWORD - Bind password for LDAP authentication
-   * @param {string} [context.environment.TLS_SKIP_VERIFY] - Set to 'true' to skip TLS certificate verification
-   * @returns {Object} Job results
+   * @param {boolean} [params.dry_run] - If true, validate without making changes
+   * @param {Object} context - Execution context with environment and secrets
+   * @returns {Object} Job results including status, userDN, groupDN, and added flag
    */
   invoke: async (params, context) => {
     console.log('Starting Active Directory add user to group operation');
 
     const { userDN, groupDN, dry_run = false } = params;
 
+    // Validate required parameters
+    if (!userDN) {
+      throw new Error('userDN is required');
+    }
+    if (!groupDN) {
+      throw new Error('groupDN is required');
+    }
+
+    console.log(`Planning to add user "${userDN}" to group "${groupDN}"`);
+
+    // Handle dry run - validate and return without making changes
     if (dry_run) {
       console.log('DRY RUN: No changes will be made to Active Directory');
       return {
@@ -86,36 +112,41 @@ var script = {
       };
     }
 
-    // Get LDAP server URL using shared utility
+    // Get LDAP connection details
     const address = getBaseURL(params, context);
-
-    // Get bind credentials from secrets
     const bindDN = context.secrets.LDAP_BIND_DN;
     const bindPassword = context.secrets.LDAP_BIND_PASSWORD;
 
+    // Validate required secrets
     if (!bindDN || !bindPassword) {
       throw new Error('Missing LDAP bind credentials. Provide LDAP_BIND_DN and LDAP_BIND_PASSWORD in secrets.');
     }
 
-    // Build TLS options
-    const tlsOptions = {};
-    if (context.environment?.TLS_SKIP_VERIFY === 'true') {
-      tlsOptions.rejectUnauthorized = false;
+    // Configure LDAP client with timeouts
+    const clientOptions = {
+      url: address,
+      timeout: 10000,
+      connectTimeout: 10000
+    };
+
+    // Configure TLS options for secure connections
+    if (address.startsWith('ldaps://') || context.environment?.TLS_SKIP_VERIFY === 'true') {
+      clientOptions.tlsOptions = {
+        rejectUnauthorized: context.environment?.TLS_SKIP_VERIFY !== 'true'
+      };
     }
 
-    const client = new ldapts.Client({
-      url: address,
-      tlsOptions
-    });
+    const client = new ldapts.Client(clientOptions);
 
     try {
-      console.log(`Binding to LDAP server at ${address}`);
+      console.log(`Connecting to LDAP server at ${address}`);
       await client.bind(bindDN, bindPassword);
+      console.log('Successfully authenticated to LDAP server');
 
-      console.log(`Adding user ${userDN} to group ${groupDN}`);
+      console.log(`Adding user to group: ${groupDN}`);
       await addUserToGroup(userDN, groupDN, client);
 
-      console.log(`Successfully added user ${userDN} to group ${groupDN}`);
+      console.log(`Successfully added user "${userDN}" to group "${groupDN}"`);
       return {
         status: 'success',
         userDN,
@@ -126,7 +157,7 @@ var script = {
     } catch (error) {
       // LDAP error code 68: ENTRY_ALREADY_EXISTS - user is already a member
       if (error.code === 68) {
-        console.log(`User ${userDN} is already a member of group ${groupDN}`);
+        console.log(`User "${userDN}" is already a member of group "${groupDN}"`);
         return {
           status: 'success',
           userDN,
@@ -137,21 +168,26 @@ var script = {
         };
       }
 
-      console.error(`Error adding user to group: ${error.message}`);
+      console.error(`Failed to add user to group: ${error.message}`);
       throw error;
     } finally {
-      await client.unbind();
+      await safeUnbind(client);
     }
   },
 
   /**
-   * Error recovery handler - framework handles retries by default
+   * Error recovery handler - classifies errors and determines retry behavior.
+   *
    * @param {Object} params - Original params plus error information
-   * @param {Object} _context - Execution context
+   * @param {Error} params.error - The error that occurred
+   * @param {string} params.userDN - The user DN being added
+   * @param {string} params.groupDN - The group DN being modified
+   * @param {Object} _context - Execution context (unused)
+   * @throws {Error} Re-throws with appropriate classification
    */
   error: async (params, _context) => {
     const { error, userDN, groupDN } = params;
-    console.error(`Failed to add user ${userDN} to group ${groupDN}: ${error.message}`);
+    console.error(`Error handler invoked for adding "${userDN}" to "${groupDN}": ${error.message}`);
 
     const errorMessage = error.message.toLowerCase();
 
@@ -163,7 +199,7 @@ var script = {
       throw new Error(`LDAP authentication failed: ${error.message}`);
     }
 
-    // Connection errors (retryable)
+    // Connection errors (retryable - framework will retry)
     if (errorMessage.includes('connection') ||
         errorMessage.includes('timeout') ||
         errorMessage.includes('econnrefused')) {
@@ -191,10 +227,14 @@ var script = {
   },
 
   /**
-   * Graceful shutdown handler - performs cleanup
+   * Graceful shutdown handler - called when the job is halted.
+   *
    * @param {Object} params - Original params plus halt reason
-   * @param {Object} _context - Execution context
-   * @returns {Object} Cleanup results
+   * @param {string} params.reason - The reason for the halt
+   * @param {string} [params.userDN] - The user DN being added
+   * @param {string} [params.groupDN] - The group DN being modified
+   * @param {Object} _context - Execution context (unused)
+   * @returns {Object} Cleanup results with halted status
    */
   halt: async (params, _context) => {
     const { reason, userDN, groupDN } = params;
