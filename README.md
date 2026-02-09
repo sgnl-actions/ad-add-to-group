@@ -141,11 +141,12 @@ The framework automatically retries on transient errors such as:
 
 ### Fatal Errors
 
-The following errors will not be retried:
-- **Invalid credentials**: Incorrect bind DN or password
-- **Insufficient access rights**: Service account lacks permission to modify the group
-- **No such object** (LDAP code 32): The user DN or group DN does not exist
-- **Invalid DN syntax**: Malformed Distinguished Name
+| LDAP Code | Error | Description |
+|-----------|-------|-------------|
+| 49 | Invalid Credentials | Bind DN or password is incorrect |
+| 50 | Insufficient Access Rights | Service account lacks permission to modify the group |
+| 32 | No Such Object | The user DN or group DN does not exist |
+| 34 | Invalid DN Syntax | Malformed Distinguished Name |
 
 ## Security Considerations
 
@@ -157,30 +158,58 @@ The following errors will not be retried:
 
 ## Development
 
-### Local Testing
+### Setup
 
 ```bash
-# Run with mock parameters
-npm run dev
-
-# Run unit tests
-npm test
-
-# Check test coverage
-npm run test:coverage
+npm install
 ```
 
-### Building
+### Run tests
 
 ```bash
-# Build distribution bundle
+npm test
+```
+
+### Run tests in watch mode
+
+```bash
+npm run test:watch
+```
+
+### Build
+
+```bash
 npm run build
+```
 
-# Validate metadata
+### Validate metadata
+
+```bash
 npm run validate
+```
 
-# Lint code
+### Lint
+
+```bash
 npm run lint
+npm run lint:fix
+```
+
+### Local testing
+
+Create a `../.env` file with your AD credentials:
+
+```
+AD_ADDRESS=ldap://your-dc.example.com:389
+LDAP_BIND_DN=CN=admin,DC=example,DC=com
+LDAP_BIND_PASSWORD=your-password
+TLS_SKIP_VERIFY=false
+```
+
+Then run:
+
+```bash
+npm run dev
 ```
 
 ## Troubleshooting
