@@ -10,6 +10,13 @@ jest.unstable_mockModule('ldapts', () => ({
     bind: mockBind,
     unbind: mockUnbind,
     modify: mockModify
+  })),
+  Change: jest.fn().mockImplementation((opts) => ({
+    operation: opts.operation,
+    modification: opts.modification
+  })),
+  Attribute: jest.fn().mockImplementation((opts) => ({
+    [opts.type]: opts.values
   }))
 }));
 
@@ -28,8 +35,8 @@ describe('AD Add User to Group Script', () => {
       ADDRESS: 'ldaps://ad.corp.example.com:636'
     },
     secrets: {
-      BASIC_USERNAME: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com',
-      BASIC_PASSWORD: 'test-password'
+      LDAP_BIND_DN: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com',
+      LDAP_BIND_PASSWORD: 'test-password'
     }
   };
 
@@ -58,10 +65,12 @@ describe('AD Add User to Group Script', () => {
       expect(result.added).toBe(true);
       expect(result.address).toBe('ldaps://ad.corp.example.com:636');
 
-      // Verify Client was constructed with correct URL
+      // Verify Client was constructed with correct URL and options
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://ad.corp.example.com:636',
-        tlsOptions: {}
+        timeout: 10000,
+        connectTimeout: 10000,
+        tlsOptions: { rejectUnauthorized: true }
       });
 
       // Verify bind was called with correct credentials
@@ -125,11 +134,11 @@ describe('AD Add User to Group Script', () => {
       expect(mockUnbind).toHaveBeenCalled();
     });
 
-    test('should throw when BASIC_USERNAME is missing', async () => {
+    test('should throw when LDAP_BIND_DN is missing', async () => {
       const contextMissingUsername = {
         ...mockContext,
         secrets: {
-          BASIC_PASSWORD: 'test-password'
+          LDAP_BIND_PASSWORD: 'test-password'
         }
       };
 
@@ -138,11 +147,11 @@ describe('AD Add User to Group Script', () => {
       );
     });
 
-    test('should throw when BASIC_PASSWORD is missing', async () => {
+    test('should throw when LDAP_BIND_PASSWORD is missing', async () => {
       const contextMissingPassword = {
         ...mockContext,
         secrets: {
-          BASIC_USERNAME: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com'
+          LDAP_BIND_DN: 'CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com'
         }
       };
 
@@ -164,16 +173,32 @@ describe('AD Add User to Group Script', () => {
 
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://ad.corp.example.com:636',
+        timeout: 10000,
+        connectTimeout: 10000,
         tlsOptions: { rejectUnauthorized: false }
       });
     });
 
-    test('should not set rejectUnauthorized when TLS_SKIP_VERIFY is not set', async () => {
+    test('should set rejectUnauthorized to true for ldaps:// URLs when TLS_SKIP_VERIFY is not set', async () => {
       await script.invoke(defaultParams, mockContext);
 
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://ad.corp.example.com:636',
-        tlsOptions: {}
+        timeout: 10000,
+        connectTimeout: 10000,
+        tlsOptions: { rejectUnauthorized: true }
+      });
+    });
+
+    test('should not include tlsOptions for ldap:// URLs when TLS_SKIP_VERIFY is not set', async () => {
+      getBaseURL.mockReturnValue('ldap://ad.corp.example.com:389');
+
+      await script.invoke(defaultParams, mockContext);
+
+      expect(Client).toHaveBeenCalledWith({
+        url: 'ldap://ad.corp.example.com:389',
+        timeout: 10000,
+        connectTimeout: 10000
       });
     });
 
@@ -195,10 +220,53 @@ describe('AD Add User to Group Script', () => {
 
       expect(getBaseURL).toHaveBeenCalledWith(defaultParams, mockContext);
     });
+
+    test('should throw when userDN is missing', async () => {
+      const params = { groupDN: defaultParams.groupDN };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('userDN is required');
+      expect(mockBind).not.toHaveBeenCalled();
+    });
+
+    test('should throw when groupDN is missing', async () => {
+      const params = { userDN: defaultParams.userDN };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('groupDN is required');
+      expect(mockBind).not.toHaveBeenCalled();
+    });
+
+    test('should handle unbind errors gracefully', async () => {
+      mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
+
+      const result = await script.invoke(defaultParams, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.added).toBe(true);
+    });
+
+    test('should not mask original error when unbind also fails', async () => {
+      mockModify.mockRejectedValueOnce(new Error('Modify operation failed'));
+      mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
+
+      await expect(script.invoke(defaultParams, mockContext)).rejects.toThrow('Modify operation failed');
+    });
+
+    test('should return dry_run_completed when dry_run is true', async () => {
+      const params = { ...defaultParams, dry_run: true };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('dry_run_completed');
+      expect(result.userDN).toBe(defaultParams.userDN);
+      expect(result.groupDN).toBe(defaultParams.groupDN);
+      expect(result.added).toBe(false);
+      expect(mockBind).not.toHaveBeenCalled();
+      expect(mockModify).not.toHaveBeenCalled();
+    });
   });
 
   describe('error handler', () => {
-    test('should re-throw error and log context', async () => {
+    test('should re-throw connection errors for framework retry', async () => {
       const errorObj = new Error('LDAP connection refused');
       const params = {
         ...defaultParams,
@@ -206,19 +274,36 @@ describe('AD Add User to Group Script', () => {
       };
 
       await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
-      expect(console.error).toHaveBeenCalledWith(
-        `User group assignment failed for user ${defaultParams.userDN} to group ${defaultParams.groupDN}: LDAP connection refused`
-      );
     });
 
-    test('should re-throw any error type', async () => {
+    test('should wrap authentication errors', async () => {
+      const errorObj = new Error('Invalid credentials');
+      const params = {
+        ...defaultParams,
+        error: errorObj
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('LDAP authentication failed');
+    });
+
+    test('should wrap permission errors', async () => {
       const errorObj = new Error('Insufficient access rights');
       const params = {
         ...defaultParams,
         error: errorObj
       };
 
-      await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
+      await expect(script.error(params, mockContext)).rejects.toThrow('Insufficient LDAP permissions');
+    });
+
+    test('should wrap not found errors', async () => {
+      const errorObj = new Error('No such object');
+      const params = {
+        ...defaultParams,
+        error: errorObj
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Resource not found');
     });
   });
 

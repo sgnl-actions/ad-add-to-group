@@ -27,6 +27,11 @@ inputs:
       min: 1
       max: 200
 
+  dry_run:
+    type: boolean
+    description: When true, validates parameters and logs intended actions without making changes to Active Directory
+    required: false
+
 # Expected output structure
 outputs:
   status:
