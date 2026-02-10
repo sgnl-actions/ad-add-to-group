@@ -4,13 +4,14 @@ This action adds a user to a group in on-premise Active Directory using LDAP/LDA
 
 ## Overview
 
-The AD Add User to Group action enables automated group membership management by adding users to Active Directory security groups or distribution groups via LDAP. It handles LDAP bind authentication, TLS configuration, and provides idempotent handling when a user is already a member of the target group.
+The AD Add User to Group action enables automated group membership management by adding users to Active Directory security groups or distribution groups via LDAP. It first looks up the user by their `sAMAccountName`, then adds them to the specified group. The action handles LDAP bind authentication, TLS configuration, and provides idempotent handling when a user is already a member of the target group.
 
 ## Prerequisites
 
 - On-premise Active Directory domain controller accessible via LDAP or LDAPS
-- A service account with permissions to modify group membership
-  - Typically requires **Write** permission on the `member` attribute of target groups
+- A service account with permissions to:
+  - Search for users in the specified base DN
+  - Modify the `member` attribute on target groups
 - Network connectivity from the execution environment to the LDAP server
 
 ## Configuration
@@ -35,16 +36,18 @@ This action uses LDAP Simple Bind authentication with a service account.
 
 | Parameter | Type | Required | Description | Example |
 |-----------|------|----------|-------------|---------|
-| `userDN` | string | Yes | Distinguished Name of the user to add | `CN=John Doe,OU=Users,DC=corp,DC=example,DC=com` |
+| `baseDN` | string | Yes | Base DN to search for the user | `DC=corp,DC=example,DC=com` |
+| `samAccountName` | string | Yes | The user's sAMAccountName (pre-Windows 2000 logon name) | `jdoe` |
 | `groupDN` | string | Yes | Distinguished Name of the target group | `CN=Admins,OU=Groups,DC=corp,DC=example,DC=com` |
 | `address` | string | No | Optional LDAP server URL override | `ldaps://ad.corp.example.com:636` |
+| `dry_run` | boolean | No | When true, validates parameters without making changes | `false` |
 
 ### Output Structure
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | Operation result (success, failed, etc.) |
-| `userDN` | string | Distinguished Name of the user that was processed |
+| `status` | string | Operation result (success, dry_run_completed, halted) |
+| `userDN` | string | The resolved Distinguished Name of the user |
 | `groupDN` | string | Distinguished Name of the group that was processed |
 | `added` | boolean | Whether the user was newly added to the group |
 | `address` | string | The LDAP server URL that was used |
@@ -56,7 +59,8 @@ This action uses LDAP Simple Bind authentication with a service account.
 
 ```json
 {
-  "userDN": "CN=John Doe,OU=Users,DC=corp,DC=example,DC=com",
+  "baseDN": "DC=corp,DC=example,DC=com",
+  "samAccountName": "jdoe",
   "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
 }
 ```
@@ -73,7 +77,8 @@ This action uses LDAP Simple Bind authentication with a service account.
     "type": "nodejs"
   },
   "script_inputs": {
-    "userDN": "CN=New Employee,OU=Users,DC=corp,DC=example,DC=com",
+    "baseDN": "DC=corp,DC=example,DC=com",
+    "samAccountName": "jdoe",
     "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
   },
   "environment": {
@@ -100,7 +105,8 @@ For environments with self-signed certificates:
     "type": "nodejs"
   },
   "script_inputs": {
-    "userDN": "CN=New Employee,OU=Users,DC=corp,DC=example,DC=com",
+    "baseDN": "DC=corp,DC=example,DC=com",
+    "samAccountName": "jdoe",
     "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
   },
   "environment": {
@@ -116,21 +122,25 @@ For environments with self-signed certificates:
 
 ## API Details
 
-This action uses the LDAP modify operation to add a user DN to the `member` attribute of the target group:
+This action performs the following LDAP operations:
+
+1. **SEARCH** the base DN to find the user by `sAMAccountName` and get their Distinguished Name
+2. **MODIFY** the group's `member` attribute to add the user DN
 
 ```
+SEARCH baseDN (scope=sub, filter=(&(objectClass=user)(sAMAccountName=<samAccountName>)))
 MODIFY groupDN
   ADD member: userDN
 ```
 
-The connection lifecycle is stateless: each invocation binds to the LDAP server, performs the modify operation, and unbinds in a `finally` block.
+The connection lifecycle is stateless: each invocation binds to the LDAP server, performs the search/modify operations, and unbinds in a `finally` block.
 
 ## Error Handling
 
 ### Success Scenarios
 
-- **Modify succeeds**: User successfully added to group (`added: true`)
-- **LDAP error code 68** (`ENTRY_ALREADY_EXISTS`): User is already a member, treated as success (`added: false`)
+- **User added**: User successfully added to group (`added: true`)
+- **Already a member**: User is already a member of the group (`added: false`, LDAP code 68 handled gracefully)
 
 ### Retryable Errors
 
@@ -142,12 +152,14 @@ The connection lifecycle is stateless: each invocation binds to the LDAP server,
 
 ### Fatal Errors
 
-| LDAP Code | Error | Description |
-|-----------|-------|-------------|
-| 49 | Invalid Credentials | Bind DN or password is incorrect |
-| 50 | Insufficient Access Rights | Service account lacks permission to modify the group |
-| 32 | No Such Object | The user DN or group DN does not exist |
-| 34 | Invalid DN Syntax | Malformed Distinguished Name |
+| Error | Description |
+|-------|-------------|
+| User not found with sAMAccountName | No user exists with the specified sAMAccountName |
+| Multiple users found | More than one user matches the sAMAccountName (should not happen in a properly configured AD) |
+| Invalid Credentials | Bind DN or password is incorrect |
+| Insufficient Access Rights | Service account lacks permission to modify the group |
+| No Such Object | The group DN does not exist |
+| Invalid DN Syntax | Malformed Distinguished Name |
 
 ## Security Considerations
 
@@ -156,6 +168,7 @@ The connection lifecycle is stateless: each invocation binds to the LDAP server,
 - **TLS Verification**: Certificate verification is enabled by default; `TLS_SKIP_VERIFY` should only be used in development or with self-signed certificates
 - **Credential Security**: Bind credentials are provided via secrets and are never logged
 - **Connection Lifecycle**: Connections are unbound in a `finally` block to prevent resource leaks
+- **LDAP Filter Escaping**: Special characters in sAMAccountName are escaped to prevent LDAP injection
 
 ## Development
 
@@ -217,28 +230,34 @@ npm run dev
 
 ### Common Issues
 
-1. **"Missing LDAP bind credentials"**
+1. **"User not found with sAMAccountName"**
+   - Verify the sAMAccountName is correct (case-insensitive in AD)
+   - Check that the user exists within the specified baseDN
+
+2. **"Multiple users found"**
+   - This should not happen in a properly configured AD since sAMAccountName must be unique within a domain
+
+3. **"Missing LDAP bind credentials"**
    - Ensure `LDAP_BIND_DN` and `LDAP_BIND_PASSWORD` are set in secrets
    - Verify the bind DN is a valid Distinguished Name
 
-2. **"No URL specified"**
+4. **"No URL specified"**
    - Ensure the `ADDRESS` environment variable is set or `address` is provided in params
    - Verify the URL format (e.g., `ldaps://ad.corp.example.com:636`)
 
-3. **"Invalid credentials"**
+5. **"Invalid credentials"**
    - Verify the service account DN and password are correct
    - Check that the account is not locked or expired in Active Directory
 
-4. **"Insufficient access rights"**
+6. **"Insufficient access rights"**
    - Verify the service account has Write permission on the `member` attribute of the target group
    - Check if there are any deny ACEs blocking the operation
 
-5. **"No such object" (LDAP code 32)**
-   - Verify the user DN exists in Active Directory
+7. **"No such object" (LDAP code 32)**
    - Verify the group DN exists in Active Directory
-   - Check for typos in the Distinguished Names
+   - Check for typos in the Distinguished Name
 
-6. **TLS/SSL connection errors**
+8. **TLS/SSL connection errors**
    - Verify the LDAP server is accessible on the configured port
    - For LDAPS, ensure the server certificate is trusted or set `TLS_SKIP_VERIFY=true` for testing
    - Check that the correct port is used (389 for LDAP, 636 for LDAPS)
@@ -255,7 +274,7 @@ ldapsearch -H ldaps://ad.corp.example.com:636 \
   "(objectClass=group)" member
 
 # Using PowerShell
-Get-ADGroupMember -Identity "Target Group" | Where-Object { $_.Name -eq "John Doe" }
+Get-ADGroupMember -Identity "Target Group" | Where-Object { $_.SamAccountName -eq "jdoe" }
 ```
 
 ## Support
