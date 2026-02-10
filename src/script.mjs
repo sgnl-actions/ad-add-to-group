@@ -9,12 +9,57 @@ import { Client, Change, Attribute } from 'ldapts';
 import { getBaseURL } from '@sgnl-actions/utils';
 
 /**
+ * Escape special characters in LDAP filter values to prevent injection.
+ *
+ * @param {string} str - The string to escape
+ * @returns {string} The escaped string safe for use in LDAP filters
+ */
+function escapeLDAPFilter(str) {
+  return str.replace(/[\\*()]/g, (char) => '\\' + char.charCodeAt(0).toString(16).padStart(2, '0'));
+}
+
+/**
+ * Find a user's Distinguished Name by searching for their sAMAccountName.
+ *
+ * @param {Client} client - Bound ldapts Client instance
+ * @param {string} baseDN - Base DN to search from
+ * @param {string} samAccountName - User's sAMAccountName
+ * @returns {Promise<string>} The user's Distinguished Name
+ * @throws {Error} If user not found or multiple users found
+ */
+async function findUserDN(client, baseDN, samAccountName) {
+  console.log(`Searching for user with sAMAccountName: ${samAccountName}`);
+
+  const escapedSamAccountName = escapeLDAPFilter(samAccountName);
+  const { searchEntries } = await client.search(baseDN, {
+    scope: 'sub',
+    filter: `(&(objectClass=user)(sAMAccountName=${escapedSamAccountName}))`,
+    attributes: ['distinguishedName']
+  });
+
+  if (!searchEntries || searchEntries.length === 0) {
+    throw new Error(`User not found with sAMAccountName: ${samAccountName}`);
+  }
+
+  if (searchEntries.length > 1) {
+    throw new Error(`Multiple users found with sAMAccountName: ${samAccountName}. Expected exactly one.`);
+  }
+
+  const userDN = searchEntries[0].dn;
+  console.log(`Found user DN: ${userDN}`);
+  return userDN;
+}
+
+/**
  * Safely disconnect from LDAP server.
  * Errors during unbind are logged but not thrown to avoid masking original errors.
  *
  * @param {Client} client - The ldapts client
  */
 async function safeUnbind(client) {
+  if (!client) {
+    return;
+  }
   try {
     await client.unbind();
   } catch (unbindError) {
@@ -49,7 +94,8 @@ export default {
    * Main execution handler - adds a user to a group in Active Directory.
    *
    * @param {Object} params - Job input parameters
-   * @param {string} params.userDN - Distinguished Name of the user to add
+   * @param {string} params.baseDN - Base DN to search for the user
+   * @param {string} params.samAccountName - User's sAMAccountName to lookup
    * @param {string} params.groupDN - Distinguished Name of the group
    * @param {string} [params.address] - Optional LDAP server URL override
    * @param {boolean} [params.dry_run] - If true, validate without making changes
@@ -59,24 +105,29 @@ export default {
   invoke: async (params, context) => {
     console.log('Starting Active Directory add user to group operation');
 
-    const { userDN, groupDN, dry_run = false } = params;
+    const { baseDN, samAccountName, groupDN, dry_run = false } = params;
 
     // Validate required parameters
-    if (!userDN) {
-      throw new Error('userDN is required');
+    if (!baseDN) {
+      throw new Error('baseDN is required');
+    }
+    if (!samAccountName) {
+      throw new Error('samAccountName is required');
     }
     if (!groupDN) {
       throw new Error('groupDN is required');
     }
 
-    console.log(`Planning to add user "${userDN}" to group "${groupDN}"`);
+    console.log(`Planning to add user "${samAccountName}" to group "${groupDN}"`);
 
     // Handle dry run - validate and return without making changes
     if (dry_run) {
       console.log('DRY RUN: No changes will be made to Active Directory');
       return {
         status: 'dry_run_completed',
-        userDN,
+        baseDN,
+        samAccountName,
+        userDN: null,
         groupDN,
         added: false
       };
@@ -113,6 +164,9 @@ export default {
       await client.bind(bindDN, bindPassword);
       console.log('Successfully authenticated to LDAP server');
 
+      // Lookup user DN by sAMAccountName
+      const userDN = await findUserDN(client, baseDN, samAccountName);
+
       console.log(`Adding user to group: ${groupDN}`);
       await addUserToGroup(userDN, groupDN, client);
 
@@ -127,6 +181,13 @@ export default {
     } catch (error) {
       // LDAP error code 68: ENTRY_ALREADY_EXISTS - user is already a member
       if (error.code === 68) {
+        // Need to get userDN for the response - it might have been found before error
+        let userDN = 'unknown';
+        try {
+          userDN = await findUserDN(client, baseDN, samAccountName);
+        } catch (lookupError) {
+          console.warn(`Warning: Could not retrieve user DN for response: ${lookupError.message}`);
+        }
         console.log(`User "${userDN}" is already a member of group "${groupDN}"`);
         return {
           status: 'success',
@@ -150,14 +211,15 @@ export default {
    *
    * @param {Object} params - Original params plus error information
    * @param {Error} params.error - The error that occurred
-   * @param {string} params.userDN - The user DN being added
+   * @param {string} params.baseDN - The base DN being searched
+   * @param {string} params.samAccountName - The sAMAccountName being looked up
    * @param {string} params.groupDN - The group DN being modified
    * @param {Object} _context - Execution context (unused)
    * @throws {Error} Re-throws with appropriate classification
    */
   error: async (params, _context) => {
-    const { error, userDN, groupDN } = params;
-    console.error(`Error handler invoked for adding "${userDN}" to "${groupDN}": ${error.message}`);
+    const { error, baseDN, samAccountName, groupDN } = params;
+    console.error(`Error handler invoked for adding "${samAccountName}" to "${groupDN}": ${error.message}`);
 
     const errorMessage = error.message.toLowerCase();
 
@@ -177,10 +239,22 @@ export default {
       throw error;
     }
 
+    // User not found (fatal - don't retry)
+    if (errorMessage.includes('user not found')) {
+      console.error('User not found - check samAccountName and baseDN');
+      throw new Error(`User not found: ${error.message}`);
+    }
+
+    // Multiple users found (fatal - don't retry)
+    if (errorMessage.includes('multiple users found')) {
+      console.error('Multiple users found - sAMAccountName should be unique');
+      throw new Error(`Multiple users found: ${error.message}`);
+    }
+
     // Not found (fatal - don't retry)
     if (errorMessage.includes('not found') ||
         errorMessage.includes('no such object')) {
-      console.error('User or group not found - check userDN and groupDN');
+      console.error('Resource not found - check groupDN');
       throw new Error(`Resource not found: ${error.message}`);
     }
 
@@ -201,18 +275,20 @@ export default {
    *
    * @param {Object} params - Original params plus halt reason
    * @param {string} params.reason - The reason for the halt
-   * @param {string} [params.userDN] - The user DN being added
+   * @param {string} [params.baseDN] - The base DN being searched
+   * @param {string} [params.samAccountName] - The sAMAccountName being looked up
    * @param {string} [params.groupDN] - The group DN being modified
    * @param {Object} _context - Execution context (unused)
    * @returns {Object} Cleanup results with halted status
    */
   halt: async (params, _context) => {
-    const { reason, userDN, groupDN } = params;
+    const { reason, baseDN, samAccountName, groupDN } = params;
     console.log(`Active Directory add user to group operation halted: ${reason}`);
 
     return {
       status: 'halted',
-      userDN: userDN || 'unknown',
+      baseDN: baseDN || 'unknown',
+      samAccountName: samAccountName || 'unknown',
       groupDN: groupDN || 'unknown',
       reason,
       halted_at: new Date().toISOString()

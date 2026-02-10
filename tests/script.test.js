@@ -4,12 +4,14 @@ import { jest } from '@jest/globals';
 const mockBind = jest.fn();
 const mockUnbind = jest.fn();
 const mockModify = jest.fn();
+const mockSearch = jest.fn();
 
 jest.unstable_mockModule('ldapts', () => ({
   Client: jest.fn().mockImplementation(() => ({
     bind: mockBind,
     unbind: mockUnbind,
-    modify: mockModify
+    modify: mockModify,
+    search: mockSearch
   })),
   Change: jest.fn().mockImplementation((opts) => ({
     operation: opts.operation,
@@ -41,18 +43,26 @@ describe('AD Add User to Group Script', () => {
   };
 
   const defaultParams = {
-    userDN: 'CN=John Doe,OU=Users,DC=corp,DC=example,DC=com',
+    baseDN: 'DC=corp,DC=example,DC=com',
+    samAccountName: 'jdoe',
     groupDN: 'CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com'
   };
+
+  const mockUserDN = 'CN=John Doe,OU=Users,DC=corp,DC=example,DC=com';
 
   beforeEach(() => {
     jest.clearAllMocks();
     global.console.log = jest.fn();
     global.console.error = jest.fn();
+    global.console.warn = jest.fn();
     getBaseURL.mockReturnValue('ldaps://ad.corp.example.com:636');
     mockBind.mockResolvedValue(undefined);
     mockUnbind.mockResolvedValue(undefined);
     mockModify.mockResolvedValue(undefined);
+    // Mock search to return user DN
+    mockSearch.mockResolvedValue({
+      searchEntries: [{ dn: mockUserDN }]
+    });
   });
 
   describe('invoke handler', () => {
@@ -60,7 +70,7 @@ describe('AD Add User to Group Script', () => {
       const result = await script.invoke(defaultParams, mockContext);
 
       expect(result.status).toBe('success');
-      expect(result.userDN).toBe(defaultParams.userDN);
+      expect(result.userDN).toBe(mockUserDN);
       expect(result.groupDN).toBe(defaultParams.groupDN);
       expect(result.added).toBe(true);
       expect(result.address).toBe('ldaps://ad.corp.example.com:636');
@@ -79,14 +89,21 @@ describe('AD Add User to Group Script', () => {
         'test-password'
       );
 
-      // Verify modify was called with correct DN and change
+      // Verify search was called to find user DN
+      expect(mockSearch).toHaveBeenCalledWith(defaultParams.baseDN, {
+        scope: 'sub',
+        filter: `(&(objectClass=user)(sAMAccountName=${defaultParams.samAccountName}))`,
+        attributes: ['distinguishedName']
+      });
+
+      // Verify modify was called with resolved DN and change
       expect(mockModify).toHaveBeenCalledWith(
         defaultParams.groupDN,
         [
           {
             operation: 'add',
             modification: {
-              member: [defaultParams.userDN]
+              member: [mockUserDN]
             }
           }
         ]
@@ -104,13 +121,40 @@ describe('AD Add User to Group Script', () => {
       const result = await script.invoke(defaultParams, mockContext);
 
       expect(result.status).toBe('success');
-      expect(result.userDN).toBe(defaultParams.userDN);
+      expect(result.userDN).toBe(mockUserDN);
       expect(result.groupDN).toBe(defaultParams.groupDN);
       expect(result.added).toBe(false);
       expect(result.message).toBe('User is already a member of the group');
       expect(result.address).toBe('ldaps://ad.corp.example.com:636');
 
       // Verify unbind was still called
+      expect(mockUnbind).toHaveBeenCalled();
+    });
+
+    test('should throw when user not found', async () => {
+      mockSearch.mockResolvedValueOnce({ searchEntries: [] });
+
+      await expect(script.invoke(defaultParams, mockContext)).rejects.toThrow(
+        'User not found with sAMAccountName: jdoe'
+      );
+
+      expect(mockModify).not.toHaveBeenCalled();
+      expect(mockUnbind).toHaveBeenCalled();
+    });
+
+    test('should throw when multiple users found', async () => {
+      mockSearch.mockResolvedValueOnce({
+        searchEntries: [
+          { dn: 'CN=John Doe,OU=Users,DC=corp,DC=example,DC=com' },
+          { dn: 'CN=Jane Doe,OU=Users,DC=corp,DC=example,DC=com' }
+        ]
+      });
+
+      await expect(script.invoke(defaultParams, mockContext)).rejects.toThrow(
+        'Multiple users found with sAMAccountName: jdoe. Expected exactly one.'
+      );
+
+      expect(mockModify).not.toHaveBeenCalled();
       expect(mockUnbind).toHaveBeenCalled();
     });
 
@@ -158,6 +202,27 @@ describe('AD Add User to Group Script', () => {
       await expect(script.invoke(defaultParams, contextMissingPassword)).rejects.toThrow(
         'Missing LDAP bind credentials'
       );
+    });
+
+    test('should throw when baseDN is missing', async () => {
+      const params = { samAccountName: 'jdoe', groupDN: defaultParams.groupDN };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('baseDN is required');
+      expect(mockBind).not.toHaveBeenCalled();
+    });
+
+    test('should throw when samAccountName is missing', async () => {
+      const params = { baseDN: defaultParams.baseDN, groupDN: defaultParams.groupDN };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('samAccountName is required');
+      expect(mockBind).not.toHaveBeenCalled();
+    });
+
+    test('should throw when groupDN is missing', async () => {
+      const params = { baseDN: defaultParams.baseDN, samAccountName: 'jdoe' };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('groupDN is required');
+      expect(mockBind).not.toHaveBeenCalled();
     });
 
     test('should set TLS rejectUnauthorized to false when TLS_SKIP_VERIFY is true', async () => {
@@ -221,20 +286,6 @@ describe('AD Add User to Group Script', () => {
       expect(getBaseURL).toHaveBeenCalledWith(defaultParams, mockContext);
     });
 
-    test('should throw when userDN is missing', async () => {
-      const params = { groupDN: defaultParams.groupDN };
-
-      await expect(script.invoke(params, mockContext)).rejects.toThrow('userDN is required');
-      expect(mockBind).not.toHaveBeenCalled();
-    });
-
-    test('should throw when groupDN is missing', async () => {
-      const params = { userDN: defaultParams.userDN };
-
-      await expect(script.invoke(params, mockContext)).rejects.toThrow('groupDN is required');
-      expect(mockBind).not.toHaveBeenCalled();
-    });
-
     test('should handle unbind errors gracefully', async () => {
       mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
 
@@ -257,11 +308,34 @@ describe('AD Add User to Group Script', () => {
       const result = await script.invoke(params, mockContext);
 
       expect(result.status).toBe('dry_run_completed');
-      expect(result.userDN).toBe(defaultParams.userDN);
+      expect(result.baseDN).toBe(defaultParams.baseDN);
+      expect(result.samAccountName).toBe(defaultParams.samAccountName);
+      expect(result.userDN).toBeNull();
       expect(result.groupDN).toBe(defaultParams.groupDN);
       expect(result.added).toBe(false);
       expect(mockBind).not.toHaveBeenCalled();
+      expect(mockSearch).not.toHaveBeenCalled();
       expect(mockModify).not.toHaveBeenCalled();
+    });
+
+    test('should escape special characters in samAccountName for LDAP filter', async () => {
+      const paramsWithSpecialChars = {
+        ...defaultParams,
+        samAccountName: 'john*doe'
+      };
+
+      mockSearch.mockResolvedValueOnce({
+        searchEntries: [{ dn: mockUserDN }]
+      });
+
+      await script.invoke(paramsWithSpecialChars, mockContext);
+
+      // Verify the filter has escaped the asterisk
+      expect(mockSearch).toHaveBeenCalledWith(defaultParams.baseDN, {
+        scope: 'sub',
+        filter: '(&(objectClass=user)(sAMAccountName=john\\2adoe))',
+        attributes: ['distinguishedName']
+      });
     });
   });
 
@@ -305,6 +379,26 @@ describe('AD Add User to Group Script', () => {
 
       await expect(script.error(params, mockContext)).rejects.toThrow('Resource not found');
     });
+
+    test('should wrap user not found errors', async () => {
+      const errorObj = new Error('User not found with sAMAccountName: jdoe');
+      const params = {
+        ...defaultParams,
+        error: errorObj
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('User not found');
+    });
+
+    test('should wrap multiple users found errors', async () => {
+      const errorObj = new Error('Multiple users found with sAMAccountName: jdoe');
+      const params = {
+        ...defaultParams,
+        error: errorObj
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Multiple users found');
+    });
   });
 
   describe('halt handler', () => {
@@ -317,13 +411,14 @@ describe('AD Add User to Group Script', () => {
       const result = await script.halt(params, mockContext);
 
       expect(result.status).toBe('halted');
-      expect(result.userDN).toBe(defaultParams.userDN);
+      expect(result.baseDN).toBe(defaultParams.baseDN);
+      expect(result.samAccountName).toBe(defaultParams.samAccountName);
       expect(result.groupDN).toBe(defaultParams.groupDN);
       expect(result.reason).toBe('timeout');
       expect(result.halted_at).toBeDefined();
     });
 
-    test('should handle halt without userDN and groupDN', async () => {
+    test('should handle halt without baseDN, samAccountName and groupDN', async () => {
       const params = {
         reason: 'system_shutdown'
       };
@@ -331,7 +426,8 @@ describe('AD Add User to Group Script', () => {
       const result = await script.halt(params, mockContext);
 
       expect(result.status).toBe('halted');
-      expect(result.userDN).toBe('unknown');
+      expect(result.baseDN).toBe('unknown');
+      expect(result.samAccountName).toBe('unknown');
       expect(result.groupDN).toBe('unknown');
       expect(result.reason).toBe('system_shutdown');
     });

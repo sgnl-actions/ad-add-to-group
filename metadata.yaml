@@ -3,13 +3,21 @@ description: Add a user to a group in on-premise Active Directory via LDAP
 
 # Input parameters for web form generation
 inputs:
-  userDN:
+  baseDN:
     type: text
-    description: Distinguished Name of the user to add (e.g., CN=John Doe,OU=Users,DC=corp,DC=example,DC=com)
+    description: Base DN to search for the user (e.g., DC=corp,DC=example,DC=com)
     required: true
     validation:
       min: 1
       max: 500
+
+  samAccountName:
+    type: text
+    description: The user's sAMAccountName (pre-Windows 2000 logon name) to lookup
+    required: true
+    validation:
+      min: 1
+      max: 256
 
   groupDN:
     type: text
@@ -36,11 +44,11 @@ inputs:
 outputs:
   status:
     type: text
-    description: Operation result (success, failed, etc.)
+    description: Operation result (success, dry_run_completed, halted)
 
   userDN:
     type: text
-    description: Distinguished Name of the user that was processed
+    description: The resolved Distinguished Name of the user
 
   groupDN:
     type: text
@@ -53,3 +61,7 @@ outputs:
   address:
     type: text
     description: The LDAP server URL that was used
+
+  message:
+    type: text
+    description: Additional status message or error details
