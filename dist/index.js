@@ -215,8 +215,8 @@ var script = {
         let userDN = 'unknown';
         try {
           userDN = await findUserDN(client, baseDN, samAccountName);
-        } catch {
-          // Ignore if we can't get it
+        } catch (lookupError) {
+          console.warn(`Warning: Could not retrieve user DN for response: ${lookupError.message}`);
         }
         console.log(`User "${userDN}" is already a member of group "${groupDN}"`);
         return {
