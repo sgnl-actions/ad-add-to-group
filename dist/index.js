@@ -45,6 +45,9 @@ function getBaseURL(params, context) {
  * @param {Client} client - The ldapts client
  */
 async function safeUnbind(client) {
+  if (!client) {
+    return;
+  }
   try {
     await client.unbind();
   } catch (unbindError) {
