@@ -134,10 +134,11 @@ The connection lifecycle is stateless: each invocation binds to the LDAP server,
 
 ### Retryable Errors
 
-The framework automatically retries on transient errors such as:
-- Network connectivity issues
-- LDAP server temporarily unavailable
-- Connection timeouts
+| Error | Description |
+|-------|-------------|
+| Network timeout | Domain Controller unreachable |
+| Connection refused | LDAP service not running |
+| Server busy | DC under heavy load |
 
 ### Fatal Errors
 
