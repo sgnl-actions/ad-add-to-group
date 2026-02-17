@@ -318,6 +318,49 @@ describe('AD Add User to Group Script', () => {
       expect(mockModify).not.toHaveBeenCalled();
     });
 
+    test('should escape backslash in samAccountName for LDAP filter', async () => {
+      const paramsWithBackslash = {
+        ...defaultParams,
+        samAccountName: 'domain\\user'
+      };
+
+      mockSearch.mockResolvedValueOnce({
+        searchEntries: [{ dn: mockUserDN }]
+      });
+
+      await script.invoke(paramsWithBackslash, mockContext);
+
+      expect(mockSearch).toHaveBeenCalledWith(defaultParams.baseDN, {
+        scope: 'sub',
+        filter: '(&(objectClass=user)(sAMAccountName=domain\\5cuser))',
+        attributes: ['distinguishedName']
+      });
+    });
+
+    test('should handle group DN with apostrophe', async () => {
+      const params = {
+        ...defaultParams,
+        groupDN: "CN=O'Brien Team,OU=Groups,DC=corp,DC=example,DC=com"
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.groupDN).toBe("CN=O'Brien Team,OU=Groups,DC=corp,DC=example,DC=com");
+    });
+
+    test('should handle group DN with dashes', async () => {
+      const params = {
+        ...defaultParams,
+        groupDN: 'CN=team - engineering,OU=Groups,DC=corp,DC=example,DC=com'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.groupDN).toBe('CN=team - engineering,OU=Groups,DC=corp,DC=example,DC=com');
+    });
+
     test('should escape special characters in samAccountName for LDAP filter', async () => {
       const paramsWithSpecialChars = {
         ...defaultParams,

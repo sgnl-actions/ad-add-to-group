@@ -15,7 +15,7 @@ import { getBaseURL } from '@sgnl-actions/utils';
  * @returns {string} The escaped string safe for use in LDAP filters
  */
 function escapeLDAPFilter(str) {
-  return str.replace(/[\\*()]/g, (char) => '\\' + char.charCodeAt(0).toString(16).padStart(2, '0'));
+  return str.replace(/[\\*()\0]/g, (char) => '\\' + char.charCodeAt(0).toString(16).padStart(2, '0'));
 }
 
 /**
