@@ -218,7 +218,7 @@ export default {
    * @throws {Error} Re-throws with appropriate classification
    */
   error: async (params, _context) => {
-    const { error, baseDN, samAccountName, groupDN } = params;
+    const { error, samAccountName, groupDN } = params;
     console.error(`Error handler invoked for adding "${samAccountName}" to "${groupDN}": ${error.message}`);
 
     const errorMessage = error.message.toLowerCase();

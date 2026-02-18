@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/sgnl-actions/schemas/main/metadata.schema.json
 name: ad-add-to-group
 description: Add a user to a group in on-premise Active Directory via LDAP
 
