@@ -63,6 +63,14 @@ outputs:
     type: text
     description: The LDAP server URL that was used
 
+  baseDN:
+    type: text
+    description: The base DN used to search for the user
+
+  samAccountName:
+    type: text
+    description: The sAMAccountName used to identify the user
+
   message:
     type: text
     description: Additional status message or error details
