@@ -1,18 +1,17 @@
 {
   "name": "@sgnl-actions/ad-add-to-group",
-  "version": "1.0.0",
   "description": "Add a user to a group in on-premise Active Directory",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "rollup -c",
+    "build": "rollup -c && generate-license-file --input package.json --output dist/licenses.txt --overwrite --ci",
     "build:watch": "rollup -c -w",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
-    "lint": "eslint src tests",
-    "lint:fix": "eslint src tests --fix",
-    "validate": "node scripts/validate-metadata.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "validate": "sgnl-validate",
     "dev": "node scripts/dev-runner.js"
   },
   "keywords": [
@@ -29,15 +28,15 @@
   "license": "MIT",
   "dependencies": {
     "ldapts": "^7.3.0",
-    "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.5"
+    "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.7"
   },
   "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@rollup/plugin-commonjs": "^28.0.1",
-    "@rollup/plugin-node-resolve": "^16.0.1",
-    "eslint": "^9.17.0",
+    "@sgnl-actions/eslint-config": "github:sgnl-actions/eslint-config#23c69696e28fbf34e7eadb12a56cda5f491c282a",
+    "@sgnl-actions/rollup-config": "github:sgnl-actions/rollup-config#f94654e450f82042ad8268ac69d79e03889031ee",
+    "@sgnl-actions/validate": "github:sgnl-actions/validate#1392b07e0c1563e729d68d2eec328ee8e03e0783",
+    "eslint": "^10.0.0",
+    "generate-license-file": "^4.1.1",
     "jest": "^30.0.5",
-    "js-yaml": "^4.1.0",
     "rollup": "^4.28.1"
   }
 }
