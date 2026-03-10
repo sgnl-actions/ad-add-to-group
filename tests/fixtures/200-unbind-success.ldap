@@ -1,0 +1,5 @@
+# LDAP unbind operation success
+operation: unbind
+result: success
+code: 0
+message: "Unbind successful"

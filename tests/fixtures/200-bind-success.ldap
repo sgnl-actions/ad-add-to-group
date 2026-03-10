@@ -1,0 +1,5 @@
+# LDAP bind operation success
+operation: bind
+result: success
+code: 0
+message: "Bind successful"
