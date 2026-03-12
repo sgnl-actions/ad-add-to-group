@@ -151,7 +151,9 @@ export default {
     };
 
     // Configure TLS options for secure connections
-    if (address.startsWith('ldaps://') || context.environment?.TLS_SKIP_VERIFY === 'true') {
+    // Only apply TLS options to ldaps:// (encrypted) connections
+    // For ldap:// (plain text) connections, TLS options cause connection failures
+    if (address.startsWith('ldaps://')) {
       clientOptions.tlsOptions = {
         rejectUnauthorized: context.environment?.TLS_SKIP_VERIFY !== 'true'
       };
