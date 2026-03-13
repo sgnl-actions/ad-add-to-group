@@ -28,9 +28,9 @@ const mockContext = {
 
 // Action-specific parameters - customize these for your test
 const mockParams = {
-  baseDN: 'DC=corp,DC=example,DC=com',
-  samAccountName: 'jsmith',
-  groupDN: 'CN=Engineering Team,OU=Groups,DC=corp,DC=example,DC=com',
+  baseDN: process.env.BASE_DN || 'DC=corp,DC=example,DC=com',
+  samAccountName: process.env.SAM_ACCOUNT_NAME || 'jsmith',
+  groupDN: process.env.GROUP_DN || 'CN=Engineering Team,OU=Groups,DC=corp,DC=example,DC=com',
   dry_run: process.env.DRY_RUN === 'true'
 };
 

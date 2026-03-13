@@ -1,0 +1,9 @@
+# LDAP modify operation - entry already exists (user already in group)
+operation: modify
+result: error
+code: 68
+message: "ENTRY_ALREADY_EXISTS: The user is already a member of the group"
+error:
+  name: "LDAPError"
+  code: 68
+  message: "ENTRY_ALREADY_EXISTS"

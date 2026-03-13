@@ -1,0 +1,9 @@
+# LDAP modify operation - object not found (group doesn't exist)
+operation: modify
+result: error
+code: 32
+message: "NO_SUCH_OBJECT: The specified group does not exist"
+error:
+  name: "LDAPError"
+  code: 32
+  message: "NO_SUCH_OBJECT"

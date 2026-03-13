@@ -1,0 +1,221 @@
+action:
+  params:
+    baseDN: DC=corp,DC=example,DC=com
+    samAccountName: jdoe
+    groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+  context:
+    secrets:
+      LDAP_BIND_DN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+      LDAP_BIND_PASSWORD: test-password
+    environment:
+      ADDRESS: ldaps://ad.corp.example.com:636
+
+scenarios:
+  - name: successfully add user to group
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"]
+        fixture: fixtures/200-modify-success.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      returns:
+        status: success
+        userDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
+        groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+        added: true
+        address: ldaps://ad.corp.example.com:636
+
+  - name: user already member of group (idempotent)
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"]
+        fixture: fixtures/68-already-member.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      returns:
+        status: success
+        userDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
+        groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+        added: false
+        message: User is already a member of the group
+        address: ldaps://ad.corp.example.com:636
+
+  - name: user not found
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: nonexistent
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(objectClass=user)(sAMAccountName=nonexistent))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-not-found.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "User not found with sAMAccountName: nonexistent"
+
+  - name: authentication failed
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/49-invalid-credentials.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "Failed to bind to LDAP server"
+
+  - name: dry run mode
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+      dry_run: true
+    steps: []  # No LDAP operations in dry run
+    invoke:
+      returns:
+        status: dry_run_completed
+        baseDN: DC=corp,DC=example,DC=com
+        samAccountName: jdoe
+        userDN: null
+        groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+        added: false
+
+  - name: missing required parameters
+    params:
+      baseDN: ""
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps: []  # No LDAP operations due to validation failure
+    invoke:
+      throws: "baseDN is required"
+
+  - name: group not found
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Nonexistent Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Nonexistent Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["CN=John Doe,OU=Users,DC=corp,DC=example,DC=com"]
+        fixture: fixtures/32-no-such-object.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "Failed to add user to group"
+
+  - name: insufficient permissions
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Protected Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Protected Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["CN=John Doe,OU=Users,DC=corp,DC=example,DC=com"]
+        fixture: fixtures/50-insufficient-access.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "Failed to add user to group"

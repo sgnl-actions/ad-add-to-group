@@ -1,0 +1,5 @@
+# LDAP search operation - user not found
+operation: search
+result: success
+code: 0
+searchEntries: []

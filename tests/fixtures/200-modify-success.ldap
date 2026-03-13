@@ -1,0 +1,5 @@
+# LDAP modify operation success
+operation: modify
+result: success
+code: 0
+message: "Modify successful"

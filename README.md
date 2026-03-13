@@ -211,13 +211,25 @@ npm run lint:fix
 
 ### Local testing
 
-Create a `../.env` file with your AD credentials:
+Copy the sample environment file and customize it:
+
+```bash
+cp .env.sample .env
+```
+
+Edit `.env` with your AD credentials:
 
 ```
 AD_ADDRESS=ldap://your-dc.example.com:389
 LDAP_BIND_DN=CN=admin,DC=example,DC=com
 LDAP_BIND_PASSWORD=your-password
 TLS_SKIP_VERIFY=false
+
+# Test parameters - customize as needed
+BASE_DN=DC=corp,DC=example,DC=com
+SAM_ACCOUNT_NAME=jsmith
+GROUP_DN=CN=Engineering Team,OU=Groups,DC=corp,DC=example,DC=com
+DRY_RUN=false
 ```
 
 Then run:

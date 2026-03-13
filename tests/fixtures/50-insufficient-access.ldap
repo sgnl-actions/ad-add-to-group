@@ -1,0 +1,9 @@
+# LDAP modify operation - insufficient access rights
+operation: modify
+result: error
+code: 50
+message: "INSUFFICIENT_ACCESS_RIGHTS: Not authorized to perform this operation"
+error:
+  name: "LDAPError"
+  code: 50
+  message: "INSUFFICIENT_ACCESS_RIGHTS"
