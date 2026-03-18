@@ -14,12 +14,12 @@ import script from '../src/script.mjs';
 // Read configuration from environment variables (set in ../.env)
 const mockContext = {
   environment: {
-    ADDRESS: process.env.AD_ADDRESS || 'ldap://localhost:389',
+    ADDRESS: process.env.ADDRESS || 'ldap://localhost:389',
     TLS_SKIP_VERIFY: process.env.TLS_SKIP_VERIFY || 'false'
   },
   secrets: {
-    LDAP_BIND_DN: process.env.LDAP_BIND_DN || '',
-    LDAP_BIND_PASSWORD: process.env.LDAP_BIND_PASSWORD || ''
+    BASIC_USERNAME: process.env.BASIC_USERNAME || '',
+    BASIC_PASSWORD: process.env.BASIC_PASSWORD || ''
   },
   outputs: {},
   partial_results: {},
@@ -38,19 +38,19 @@ async function runDev() {
   console.log('Running job script in development mode...\n');
 
   // Validate required environment variables
-  if (!mockContext.secrets.LDAP_BIND_DN || !mockContext.secrets.LDAP_BIND_PASSWORD) {
+  if (!mockContext.secrets.BASIC_USERNAME || !mockContext.secrets.BASIC_PASSWORD) {
     console.error('ERROR: Missing required environment variables.');
-    console.error('Set LDAP_BIND_DN and LDAP_BIND_PASSWORD in ../.env or environment.');
+    console.error('Set BASIC_USERNAME and BASIC_PASSWORD in ../.env or environment.');
     console.error('\nExample:');
-    console.error('  export LDAP_BIND_DN="CN=admin,DC=example,DC=com"');
-    console.error('  export LDAP_BIND_PASSWORD="password"');
+    console.error('  export BASIC_USERNAME="CN=admin,DC=example,DC=com"');
+    console.error('  export BASIC_PASSWORD="password"');
     process.exit(1);
   }
 
   console.log('Parameters:', JSON.stringify(mockParams, null, 2));
   console.log('Context:', JSON.stringify({
     ...mockContext,
-    secrets: { LDAP_BIND_DN: mockContext.secrets.LDAP_BIND_DN, LDAP_BIND_PASSWORD: '***' }
+    secrets: { BASIC_USERNAME: mockContext.secrets.BASIC_USERNAME, BASIC_PASSWORD: '***' }
   }, null, 2));
   console.log('\n' + '='.repeat(50) + '\n');
 
