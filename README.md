@@ -22,8 +22,8 @@ This action uses LDAP Simple Bind authentication with a service account.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `LDAP_BIND_DN` | Secret | Yes | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com`) |
-| `LDAP_BIND_PASSWORD` | Secret | Yes | Password for the service account |
+| `BASIC_USERNAME` | Secret | Yes | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com`) |
+| `BASIC_PASSWORD` | Secret | Yes | Password for the service account |
 
 ### Environment Variables
 
@@ -85,8 +85,8 @@ This action uses LDAP Simple Bind authentication with a service account.
     "ADDRESS": "ldaps://ad.corp.example.com:636"
   },
   "secrets": {
-    "LDAP_BIND_DN": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
-    "LDAP_BIND_PASSWORD": "your-service-account-password"
+    "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
+    "BASIC_PASSWORD": "your-service-account-password"
   }
 }
 ```
@@ -114,8 +114,8 @@ For environments with self-signed certificates:
     "TLS_SKIP_VERIFY": "true"
   },
   "secrets": {
-    "LDAP_BIND_DN": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
-    "LDAP_BIND_PASSWORD": "your-service-account-password"
+    "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
+    "BASIC_PASSWORD": "your-service-account-password"
   }
 }
 ```
@@ -220,9 +220,9 @@ cp .env.sample .env
 Edit `.env` with your AD credentials:
 
 ```
-AD_ADDRESS=ldap://your-dc.example.com:389
-LDAP_BIND_DN=CN=admin,DC=example,DC=com
-LDAP_BIND_PASSWORD=your-password
+ADDRESS=ldap://your-dc.example.com:389
+BASIC_USERNAME=CN=admin,DC=example,DC=com
+BASIC_PASSWORD=your-password
 TLS_SKIP_VERIFY=false
 
 # Test parameters - customize as needed
@@ -250,7 +250,7 @@ npm run dev
    - This should not happen in a properly configured AD since sAMAccountName must be unique within a domain
 
 3. **"Missing LDAP bind credentials"**
-   - Ensure `LDAP_BIND_DN` and `LDAP_BIND_PASSWORD` are set in secrets
+   - Ensure `BASIC_USERNAME` and `BASIC_PASSWORD` are set in secrets
    - Verify the bind DN is a valid Distinguished Name
 
 4. **"No URL specified"**
