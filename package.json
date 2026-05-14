@@ -29,7 +29,7 @@
   "dependencies": {
     "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.8",
     "ldapts": "^7.3.0",
-    "yaml": "^2.8.2"
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@sgnl-actions/eslint-config": "github:sgnl-actions/eslint-config#23c69696e28fbf34e7eadb12a56cda5f491c282a",
