@@ -32,6 +32,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@rollup/plugin-json": "^6.1.0",
     "@sgnl-actions/eslint-config": "github:sgnl-actions/eslint-config#23c69696e28fbf34e7eadb12a56cda5f491c282a",
     "@sgnl-actions/rollup-config": "github:sgnl-actions/rollup-config#f94654e450f82042ad8268ac69d79e03889031ee",
     "@sgnl-actions/testing": "github:sgnl-actions/testing#v1.0.2",
