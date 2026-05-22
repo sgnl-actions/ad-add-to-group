@@ -1,18 +1,26 @@
-# Active Directory Add User to Group Action
+# Active Directory Add Member to Group Action
 
-This action adds a user to a group in on-premise Active Directory using LDAP/LDAPS.
+This action adds a member (user **or** group) to a group in on-premise Active Directory using LDAP/LDAPS, with optional support for AD's temporary group membership (TTL) feature.
 
 ## Overview
 
-The AD Add User to Group action enables automated group membership management by adding users to Active Directory security groups or distribution groups via LDAP. It first looks up the user by their `sAMAccountName`, then adds them to the specified group. The action handles LDAP bind authentication, TLS configuration, and provides idempotent handling when a user is already a member of the target group.
+The action looks up a member by `sAMAccountName` — which is unique per domain and resolves to either a user or a group — then adds that member to the specified group's `member` attribute. When `ttlSeconds` is supplied, the membership is added with AD's temporary-membership syntax (`<TTL=N>,DN`), and AD automatically removes the membership when the TTL elapses. The action handles LDAP bind authentication, TLS configuration, and provides idempotent handling when a member is already in the target group (no-TTL case).
 
 ## Prerequisites
 
 - On-premise Active Directory domain controller accessible via LDAP or LDAPS
 - A service account with permissions to:
-  - Search for users in the specified base DN
+  - Search for users and groups in the specified base DN
   - Modify the `member` attribute on target groups
 - Network connectivity from the execution environment to the LDAP server
+- **For TTL (temporary) memberships only:**
+  - Forest Functional Level Windows Server 2016 or higher
+  - The Privileged Access Management Feature enabled in the forest:
+    ```powershell
+    Enable-ADOptionalFeature -Identity 'Privileged Access Management Feature' \
+      -Scope ForestOrConfigurationSet -Target <your-domain>
+    ```
+  - Note: this feature **cannot be disabled** once enabled.
 
 ## Configuration
 
@@ -36,9 +44,10 @@ This action uses LDAP Simple Bind authentication with a service account.
 
 | Parameter | Type | Required | Description | Example |
 |-----------|------|----------|-------------|---------|
-| `baseDN` | string | Yes | Base DN to search for the user | `DC=corp,DC=example,DC=com` |
-| `samAccountName` | string | Yes | The user's sAMAccountName (pre-Windows 2000 logon name) | `jdoe` |
+| `baseDN` | string | Yes | Base DN to search for the member | `DC=corp,DC=example,DC=com` |
+| `samAccountName` | string | Yes | sAMAccountName of the user or group to add (unique per domain) | `jdoe` or `Engineering` |
 | `groupDN` | string | Yes | Distinguished Name of the target group | `CN=Admins,OU=Groups,DC=corp,DC=example,DC=com` |
+| `ttlSeconds` | integer | No | Time-to-live in seconds for temporary group membership. See [Temporary Group Membership (TTL)](#temporary-group-membership-ttl). | `3600` |
 | `address` | string | No | Optional LDAP server URL override | `ldaps://ad.corp.example.com:636` |
 | `dry_run` | boolean | No | When true, validates parameters without making changes | `false` |
 
@@ -47,15 +56,17 @@ This action uses LDAP Simple Bind authentication with a service account.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | Operation result (success, dry_run_completed, halted) |
-| `userDN` | string | The resolved Distinguished Name of the user |
+| `memberDN` | string | Resolved Distinguished Name of the added member |
+| `userDN` | string | Backward-compatible alias for `memberDN` (same value) |
 | `groupDN` | string | Distinguished Name of the group that was processed |
-| `added` | boolean | Whether the user was newly added to the group |
-| `address` | string | The LDAP server URL that was used |
-| `message` | string | Optional message providing additional context (e.g., when user is already a member) |
+| `added` | boolean | Whether the member was newly added to the group |
+| `ttlSeconds` | integer | Echoed back when a TTL was requested |
+| `address` | string | LDAP server URL that was used |
+| `message` | string | Optional message providing additional context |
 
 ## Usage Examples
 
-### Basic Usage
+### Add a user to a group
 
 ```json
 {
@@ -65,11 +76,36 @@ This action uses LDAP Simple Bind authentication with a service account.
 }
 ```
 
+### Add a group to a group (nested membership)
+
+`sAMAccountName` is unique per domain, so the same input parameter resolves a group just as it does a user — no separate flag needed.
+
+```json
+{
+  "baseDN": "DC=corp,DC=example,DC=com",
+  "samAccountName": "Engineering",
+  "groupDN": "CN=All Staff,OU=Groups,DC=corp,DC=example,DC=com"
+}
+```
+
+### Add a user with a 1-hour TTL
+
+Membership expires automatically after 3600 seconds. Requires the PAM feature (see Prerequisites).
+
+```json
+{
+  "baseDN": "DC=corp,DC=example,DC=com",
+  "samAccountName": "jdoe",
+  "groupDN": "CN=Domain Admins,OU=Groups,DC=corp,DC=example,DC=com",
+  "ttlSeconds": 3600
+}
+```
+
 ### Job Specification
 
 ```json
 {
-  "id": "add-user-to-hr-group",
+  "id": "add-member-to-hr-group",
   "type": "nodejs-22",
   "script": {
     "repository": "github.com/sgnl-actions/ad-add-to-group",
@@ -97,7 +133,7 @@ For environments with self-signed certificates:
 
 ```json
 {
-  "id": "add-user-to-hr-group",
+  "id": "add-member-to-hr-group",
   "type": "nodejs-22",
   "script": {
     "repository": "github.com/sgnl-actions/ad-add-to-group",
@@ -124,23 +160,39 @@ For environments with self-signed certificates:
 
 This action performs the following LDAP operations:
 
-1. **SEARCH** the base DN to find the user by `sAMAccountName` and get their Distinguished Name
-2. **MODIFY** the group's `member` attribute to add the user DN
+1. **SEARCH** the base DN to find the member by `sAMAccountName` and get the Distinguished Name
+2. **MODIFY** the group's `member` attribute to add the member DN (with TTL prefix when `ttlSeconds` is set)
 
 ```
-SEARCH baseDN (scope=sub, filter=(&(objectClass=user)(sAMAccountName=<samAccountName>)))
+SEARCH baseDN (scope=sub, filter=(&(|(objectClass=user)(objectClass=group))(sAMAccountName=<samAccountName>)))
 MODIFY groupDN
-  ADD member: userDN
+  ADD member: <memberDN>                       # without TTL
+  ADD member: <TTL=<ttlSeconds>>,<memberDN>    # with TTL
 ```
 
 The connection lifecycle is stateless: each invocation binds to the LDAP server, performs the search/modify operations, and unbinds in a `finally` block.
+
+## Temporary Group Membership (TTL)
+
+When `ttlSeconds` is provided, the action submits the new member with AD's temporary-membership value syntax: `<TTL=N>,DN`. Active Directory will automatically remove the membership when the TTL elapses, and Kerberos TGT lifetimes for the user are reduced to match the shortest TTL across their group memberships.
+
+**Prerequisites** (see top of doc): Forest Functional Level 2016+, PAM feature enabled.
+
+**Important caveats:**
+
+- **PAM feature not enabled** — AD silently ignores the `<TTL=…>` prefix; membership is created permanently rather than temporarily. The action cannot detect this server-side condition.
+- **Member already in group** — AD will not overlay a TTL onto an existing non-temporary membership. The action throws an explicit error in this case (rather than the idempotent success returned when no TTL is requested). Remove the member first, then retry with `ttlSeconds`.
+- **Clock skew** — TTL expiration relies on DC clock accuracy. Ensure NTP is healthy.
+- **Azure AD Sync** — TTL-driven removals do not automatically propagate to Azure AD Connect.
+
+Reference: [Privileged Access Management for Active Directory Domain Services — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-identity-manager/pam/privileged-identity-management-for-active-directory-domain-services).
 
 ## Error Handling
 
 ### Success Scenarios
 
-- **User added**: User successfully added to group (`added: true`)
-- **Already a member**: User is already a member of the group (`added: false`, LDAP code 68 handled gracefully)
+- **Member added**: `added: true`
+- **Already a member (no TTL)**: `added: false` (LDAP code 68 handled idempotently)
 
 ### Retryable Errors
 
@@ -154,8 +206,10 @@ The connection lifecycle is stateless: each invocation binds to the LDAP server,
 
 | Error | Description |
 |-------|-------------|
-| User not found with sAMAccountName | No user exists with the specified sAMAccountName |
-| Multiple users found | More than one user matches the sAMAccountName (should not happen in a properly configured AD) |
+| Member not found with sAMAccountName | No user or group exists with the specified sAMAccountName |
+| Multiple members found | More than one entry matches (should not happen — sAMAccountName is domain-unique) |
+| TTL cannot be applied to an existing membership | `ttlSeconds` was set and the member is already in the group |
+| ttlSeconds must be a positive integer | Invalid `ttlSeconds` input (e.g. zero, negative, non-integer) |
 | Invalid Credentials | Bind DN or password is incorrect |
 | Insufficient Access Rights | Service account lacks permission to modify the group |
 | No Such Object | The group DN does not exist |
@@ -229,6 +283,7 @@ TLS_SKIP_VERIFY=false
 BASE_DN=DC=corp,DC=example,DC=com
 SAM_ACCOUNT_NAME=jsmith
 GROUP_DN=CN=Engineering Team,OU=Groups,DC=corp,DC=example,DC=com
+TTL_SECONDS=
 DRY_RUN=false
 ```
 
@@ -242,11 +297,11 @@ npm run dev
 
 ### Common Issues
 
-1. **"User not found with sAMAccountName"**
+1. **"Member not found with sAMAccountName"**
    - Verify the sAMAccountName is correct (case-insensitive in AD)
-   - Check that the user exists within the specified baseDN
+   - Check that the user or group exists within the specified baseDN
 
-2. **"Multiple users found"**
+2. **"Multiple members found"**
    - This should not happen in a properly configured AD since sAMAccountName must be unique within a domain
 
 3. **"Missing LDAP bind credentials"**
@@ -269,10 +324,19 @@ npm run dev
    - Verify the group DN exists in Active Directory
    - Check for typos in the Distinguished Name
 
-8. **TLS/SSL connection errors**
-   - Verify the LDAP server is accessible on the configured port
-   - For LDAPS, ensure the server certificate is trusted or set `TLS_SKIP_VERIFY=true` for testing
-   - Check that the correct port is used (389 for LDAP, 636 for LDAPS)
+8. **"TTL cannot be applied to an existing membership"**
+   - The member is already in the group. AD will not overlay a TTL onto an existing non-temporary membership.
+   - Remove the existing membership first, then retry with `ttlSeconds`.
+
+9. **TTL was set but the membership is not expiring**
+   - Verify the PAM feature is enabled (`Get-ADOptionalFeature 'Privileged Access Management Feature'`)
+   - Confirm Forest Functional Level is 2016 or higher
+   - Check DC time synchronization (clock skew can delay expiration)
+
+10. **TLS/SSL connection errors**
+    - Verify the LDAP server is accessible on the configured port
+    - For LDAPS, ensure the server certificate is trusted or set `TLS_SKIP_VERIFY=true` for testing
+    - Check that the correct port is used (389 for LDAP, 636 for LDAPS)
 
 ### Testing Group Membership
 
@@ -293,4 +357,5 @@ Get-ADGroupMember -Identity "Target Group" | Where-Object { $_.SamAccountName -e
 
 - [ldapts Documentation](https://github.com/ldapts/ldapts)
 - [Active Directory LDAP Reference](https://docs.microsoft.com/en-us/windows/win32/ad/active-directory-domain-services)
+- [Privileged Access Management for AD DS](https://learn.microsoft.com/en-us/microsoft-identity-manager/pam/privileged-identity-management-for-active-directory-domain-services)
 - [SGNL Actions Documentation](https://github.com/sgnl-actions)

@@ -34,6 +34,12 @@ const mockParams = {
   dry_run: process.env.DRY_RUN === 'true'
 };
 
+// Optional: TTL for AD temporary group membership. Only include when set so the
+// action sees `undefined` rather than `NaN` when the env var is empty.
+if (process.env.TTL_SECONDS) {
+  mockParams.ttlSeconds = parseInt(process.env.TTL_SECONDS, 10);
+}
+
 async function runDev() {
   console.log('Running job script in development mode...\n');
 
