@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/sgnl-actions/schemas/main/metadata.schema.json
 name: ad-add-to-group
-description: Add a user to a group in on-premise Active Directory via LDAP
+description: Add a user or group to a group in on-premise Active Directory via LDAP, optionally with a TTL for temporary membership
 
 # Input parameters for web form generation
 inputs:
   baseDN:
     type: text
-    description: Base DN to search for the user (e.g., DC=corp,DC=example,DC=com)
+    description: Base DN to search for the member (e.g., DC=corp,DC=example,DC=com)
     required: true
     validation:
       min: 1
@@ -14,7 +14,7 @@ inputs:
 
   samAccountName:
     type: text
-    description: The user's sAMAccountName (pre-Windows 2000 logon name) to lookup
+    description: The sAMAccountName of the user or group to add (sAMAccountName is unique per domain and resolves to either a user or a group)
     required: true
     validation:
       min: 1
@@ -36,6 +36,13 @@ inputs:
       min: 1
       max: 200
 
+  ttlSeconds:
+    type: number
+    description: Optional time-to-live in seconds for temporary group membership. When set, AD automatically removes the membership after the TTL elapses. Requires Forest Functional Level Windows Server 2016+ and the "Privileged Access Management Feature" to be enabled. Fails if the member is already in the group.
+    required: false
+    validation:
+      min: 1
+
   dry_run:
     type: boolean
     description: When true, validates parameters and logs intended actions without making changes to Active Directory
@@ -47,9 +54,13 @@ outputs:
     type: text
     description: Operation result (success, dry_run_completed, halted)
 
+  memberDN:
+    type: text
+    description: The resolved Distinguished Name of the member (user or group) that was added
+
   userDN:
     type: text
-    description: The resolved Distinguished Name of the user
+    description: Backward-compatible alias for memberDN (same value)
 
   groupDN:
     type: text
@@ -57,7 +68,11 @@ outputs:
 
   added:
     type: boolean
-    description: Whether the user was newly added to the group
+    description: Whether the member was newly added to the group
+
+  ttlSeconds:
+    type: number
+    description: Echoed back when a TTL was requested on the membership
 
   address:
     type: text
@@ -65,11 +80,11 @@ outputs:
 
   baseDN:
     type: text
-    description: The base DN used to search for the user
+    description: The base DN used to search for the member
 
   samAccountName:
     type: text
-    description: The sAMAccountName used to identify the user
+    description: The sAMAccountName used to identify the member
 
   message:
     type: text

@@ -1,8 +1,20 @@
 /**
- * Active Directory Add User to Group Action
+ * Active Directory Add Member to Group Action
  *
- * Adds a user to a group in on-premise Active Directory using LDAP/LDAPS.
- * If the user is already a member, returns success with added=false.
+ * Adds a user or group ("member") to a group in on-premise Active Directory
+ * using LDAP/LDAPS. The member is resolved by sAMAccountName, which is unique
+ * per domain and matches either a user or a group.
+ *
+ * If `ttlSeconds` is provided, the membership is added with AD's temporary
+ * group membership syntax (`<TTL=N>,DN`). This requires the Privileged Access
+ * Management Feature to be enabled in the forest (Forest Functional Level
+ * Windows Server 2016+); AD will then automatically remove the membership
+ * when the TTL elapses.
+ *
+ * If the member is already in the group:
+ *   - without TTL: returns success with `added: false` (idempotent)
+ *   - with TTL: throws an explicit error, because AD will not overlay a TTL
+ *     onto an existing non-temporary membership
  */
 
 import { Client, Change, Attribute } from 'ldapts';
@@ -19,35 +31,38 @@ function escapeLDAPFilter(str) {
 }
 
 /**
- * Find a user's Distinguished Name by searching for their sAMAccountName.
+ * Find a member's Distinguished Name by searching for their sAMAccountName.
+ *
+ * The objectClass filter matches both users and groups since sAMAccountName
+ * is unique per domain and may resolve to either.
  *
  * @param {Client} client - Bound ldapts Client instance
  * @param {string} baseDN - Base DN to search from
- * @param {string} samAccountName - User's sAMAccountName
- * @returns {Promise<string>} The user's Distinguished Name
- * @throws {Error} If user not found or multiple users found
+ * @param {string} samAccountName - sAMAccountName of the user or group
+ * @returns {Promise<string>} The member's Distinguished Name
+ * @throws {Error} If no member is found or multiple members are found
  */
-async function findUserDN(client, baseDN, samAccountName) {
-  console.log(`Searching for user with sAMAccountName: ${samAccountName}`);
+async function findMemberDN(client, baseDN, samAccountName) {
+  console.log(`Searching for member with sAMAccountName: ${samAccountName}`);
 
   const escapedSamAccountName = escapeLDAPFilter(samAccountName);
   const { searchEntries } = await client.search(baseDN, {
     scope: 'sub',
-    filter: `(&(objectClass=user)(sAMAccountName=${escapedSamAccountName}))`,
+    filter: `(&(|(objectClass=user)(objectClass=group))(sAMAccountName=${escapedSamAccountName}))`,
     attributes: ['distinguishedName']
   });
 
   if (!searchEntries || searchEntries.length === 0) {
-    throw new Error(`User not found with sAMAccountName: ${samAccountName}`);
+    throw new Error(`Member not found with sAMAccountName: ${samAccountName}`);
   }
 
   if (searchEntries.length > 1) {
-    throw new Error(`Multiple users found with sAMAccountName: ${samAccountName}. Expected exactly one.`);
+    throw new Error(`Multiple members found with sAMAccountName: ${samAccountName}. Expected exactly one.`);
   }
 
-  const userDN = searchEntries[0].dn;
-  console.log(`Found user DN: ${userDN}`);
-  return userDN;
+  const memberDN = searchEntries[0].dn;
+  console.log(`Found member DN: ${memberDN}`);
+  return memberDN;
 }
 
 /**
@@ -68,20 +83,27 @@ async function safeUnbind(client) {
 }
 
 /**
- * Add a user to a group in Active Directory by modifying the group's member attribute.
+ * Add a member to a group in Active Directory by modifying the group's
+ * member attribute.
  *
- * @param {string} userDN - Distinguished Name of the user to add
+ * When `ttlSeconds` is provided, the attribute value uses AD's temporary-
+ * membership syntax: `<TTL=N>,DN`. AD automatically removes the membership
+ * when the TTL elapses (requires the PAM feature to be enabled).
+ *
+ * @param {string} memberDN - Distinguished Name of the member to add
  * @param {string} groupDN - Distinguished Name of the group
  * @param {Client} client - Bound ldapts Client instance
+ * @param {number} [ttlSeconds] - Optional TTL in seconds for temporary membership
  * @returns {Promise<{success: boolean}>}
  */
-async function addUserToGroup(userDN, groupDN, client) {
+async function addMemberToGroup(memberDN, groupDN, client, ttlSeconds) {
+  const memberValue = ttlSeconds ? `<TTL=${ttlSeconds}>,${memberDN}` : memberDN;
   await client.modify(groupDN, [
     new Change({
       operation: 'add',
       modification: new Attribute({
         type: 'member',
-        values: [userDN]
+        values: [memberValue]
       })
     })
   ]);
@@ -91,21 +113,23 @@ async function addUserToGroup(userDN, groupDN, client) {
 
 export default {
   /**
-   * Main execution handler - adds a user to a group in Active Directory.
+   * Main execution handler - adds a member (user or group) to a group in
+   * Active Directory.
    *
    * @param {Object} params - Job input parameters
-   * @param {string} params.baseDN - Base DN to search for the user
-   * @param {string} params.samAccountName - User's sAMAccountName to lookup
-   * @param {string} params.groupDN - Distinguished Name of the group
+   * @param {string} params.baseDN - Base DN to search for the member
+   * @param {string} params.samAccountName - sAMAccountName of the user or group to add
+   * @param {string} params.groupDN - Distinguished Name of the target group
+   * @param {number} [params.ttlSeconds] - Optional TTL in seconds for temporary group membership (requires AD PAM feature)
    * @param {string} [params.address] - Optional LDAP server URL override
    * @param {boolean} [params.dry_run] - If true, validate without making changes
    * @param {Object} context - Execution context with environment and secrets
-   * @returns {Object} Job results including status, userDN, groupDN, and added flag
+   * @returns {Object} Job results including status, memberDN, groupDN, and added flag
    */
   invoke: async (params, context) => {
-    console.log('Starting Active Directory add user to group operation');
+    console.log('Starting Active Directory add member to group operation');
 
-    const { baseDN, samAccountName, groupDN, dry_run = false } = params;
+    const { baseDN, samAccountName, groupDN, ttlSeconds, dry_run = false } = params;
 
     // Validate required parameters
     if (!baseDN) {
@@ -118,7 +142,19 @@ export default {
       throw new Error('groupDN is required');
     }
 
-    console.log(`Planning to add user "${samAccountName}" to group "${groupDN}"`);
+    // Validate optional ttlSeconds: when provided, must be a positive integer.
+    // We reject invalid values up front so we don't issue any LDAP I/O for input
+    // that AD would either reject or silently coerce.
+    let ttl;
+    if (ttlSeconds !== undefined && ttlSeconds !== null && ttlSeconds !== '') {
+      ttl = Number(ttlSeconds);
+      if (!Number.isInteger(ttl) || ttl < 1) {
+        throw new Error('ttlSeconds must be a positive integer (seconds)');
+      }
+    }
+
+    const ttlSuffix = ttl ? ` with TTL ${ttl}s` : '';
+    console.log(`Planning to add member "${samAccountName}" to group "${groupDN}"${ttlSuffix}`);
 
     // Handle dry run - validate and return without making changes
     if (dry_run) {
@@ -127,9 +163,11 @@ export default {
         status: 'dry_run_completed',
         baseDN,
         samAccountName,
+        memberDN: null,
         userDN: null,
         groupDN,
-        added: false
+        added: false,
+        ttlSeconds: ttl ?? null
       };
     }
 
@@ -166,42 +204,60 @@ export default {
       await client.bind(bindDN, bindPassword);
       console.log('Successfully authenticated to LDAP server');
 
-      // Lookup user DN by sAMAccountName
-      const userDN = await findUserDN(client, baseDN, samAccountName);
+      // Lookup member DN by sAMAccountName (matches users and groups)
+      const memberDN = await findMemberDN(client, baseDN, samAccountName);
 
-      console.log(`Adding user to group: ${groupDN}`);
-      await addUserToGroup(userDN, groupDN, client);
+      console.log(`Adding member to group: ${groupDN}${ttlSuffix}`);
+      await addMemberToGroup(memberDN, groupDN, client, ttl);
 
-      console.log(`Successfully added user "${userDN}" to group "${groupDN}"`);
+      console.log(`Successfully added member "${memberDN}" to group "${groupDN}"${ttlSuffix}`);
+      // `userDN` is kept as a same-value alias of `memberDN` for backward
+      // compatibility with existing consumers.
       return {
         status: 'success',
-        userDN,
+        memberDN,
+        userDN: memberDN,
         groupDN,
         added: true,
-        address
+        address,
+        ttlSeconds: ttl ?? null
       };
     } catch (error) {
-      // LDAP error code 68: ENTRY_ALREADY_EXISTS - user is already a member
+      // LDAP error code 68: ENTRY_ALREADY_EXISTS - member is already in the group
       if (error.code === 68) {
-        // Need to get userDN for the response - it might have been found before error
-        let userDN = 'unknown';
-        try {
-          userDN = await findUserDN(client, baseDN, samAccountName);
-        } catch (lookupError) {
-          console.warn(`Warning: Could not retrieve user DN for response: ${lookupError.message}`);
+        // When a TTL was requested, AD will not overlay a TTL onto an existing
+        // non-temporary membership. Surface this explicitly rather than silently
+        // succeeding without the requested TTL.
+        if (ttl) {
+          throw new Error(
+            'Member is already in the group; TTL cannot be applied to an existing membership. '
+            + 'Remove the member first, then retry with ttlSeconds.',
+            { cause: error }
+          );
         }
-        console.log(`User "${userDN}" is already a member of group "${groupDN}"`);
+
+        // No TTL was requested: treat already-a-member as idempotent success.
+        // Re-resolve the member DN for the response since we did not capture it
+        // on the path that threw error 68.
+        let memberDN = 'unknown';
+        try {
+          memberDN = await findMemberDN(client, baseDN, samAccountName);
+        } catch (lookupError) {
+          console.warn(`Warning: Could not retrieve member DN for response: ${lookupError.message}`);
+        }
+        console.log(`Member "${memberDN}" is already a member of group "${groupDN}"`);
         return {
           status: 'success',
-          userDN,
+          memberDN,
+          userDN: memberDN,
           groupDN,
           added: false,
-          message: 'User is already a member of the group',
+          message: 'Member is already a member of the group',
           address
         };
       }
 
-      console.error(`Failed to add user to group: ${error.message}`);
+      console.error(`Failed to add member to group: ${error.message}`);
       throw error;
     } finally {
       await safeUnbind(client);
@@ -241,16 +297,16 @@ export default {
       throw error;
     }
 
-    // User not found (fatal - don't retry)
-    if (errorMessage.includes('user not found')) {
-      console.error('User not found - check samAccountName and baseDN');
-      throw new Error(`User not found: ${error.message}`);
+    // Member not found (fatal - don't retry)
+    if (errorMessage.includes('member not found')) {
+      console.error('Member not found - check samAccountName and baseDN');
+      throw new Error(`Member not found: ${error.message}`);
     }
 
-    // Multiple users found (fatal - don't retry)
-    if (errorMessage.includes('multiple users found')) {
-      console.error('Multiple users found - sAMAccountName should be unique');
-      throw new Error(`Multiple users found: ${error.message}`);
+    // Multiple members found (fatal - don't retry)
+    if (errorMessage.includes('multiple members found')) {
+      console.error('Multiple members found - sAMAccountName should be unique');
+      throw new Error(`Multiple members found: ${error.message}`);
     }
 
     // Not found (fatal - don't retry)
@@ -285,7 +341,7 @@ export default {
    */
   halt: async (params, _context) => {
     const { reason, baseDN, samAccountName, groupDN } = params;
-    console.log(`Active Directory add user to group operation halted: ${reason}`);
+    console.log(`Active Directory add member to group operation halted: ${reason}`);
 
     return {
       status: 'halted',

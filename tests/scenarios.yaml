@@ -26,7 +26,7 @@ scenarios:
           operation: search
           baseDN: DC=corp,DC=example,DC=com
           scope: sub
-          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=jdoe))"
           attributes: ["distinguishedName"]
         fixture: fixtures/200-user-found.ldap
       - ldap:
@@ -44,12 +44,137 @@ scenarios:
     invoke:
       returns:
         status: success
+        memberDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
         userDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
         groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
         added: true
         address: ldaps://ad.corp.example.com:636
 
-  - name: user already member of group (idempotent)
+  - name: successfully add group to group
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: ChildGroup
+      groupDN: CN=Parent Group,OU=Groups,DC=corp,DC=example,DC=com
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=ChildGroup))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Parent Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"]
+        fixture: fixtures/200-modify-success.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      returns:
+        status: success
+        memberDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
+        userDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
+        groupDN: CN=Parent Group,OU=Groups,DC=corp,DC=example,DC=com
+        added: true
+        address: ldaps://ad.corp.example.com:636
+
+  - name: successfully add member with TTL
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+      ttlSeconds: 3600
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=jdoe))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["<TTL=3600>,CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"]
+        fixture: fixtures/200-modify-success.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      returns:
+        status: success
+        memberDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
+        userDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
+        groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+        added: true
+        ttlSeconds: 3600
+        address: ldaps://ad.corp.example.com:636
+
+  - name: TTL add fails when member already exists
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+      ttlSeconds: 3600
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: search
+          baseDN: DC=corp,DC=example,DC=com
+          scope: sub
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=jdoe))"
+          attributes: ["distinguishedName"]
+        fixture: fixtures/200-user-found.ldap
+      - ldap:
+          operation: modify
+          dn: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+          changes:
+            - operation: add
+              modification:
+                type: member
+                values: ["<TTL=3600>,CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"]
+        fixture: fixtures/68-already-member.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "TTL cannot be applied to an existing membership"
+
+  - name: invalid ttlSeconds rejected before LDAP I/O
+    params:
+      baseDN: DC=corp,DC=example,DC=com
+      samAccountName: jdoe
+      groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
+      ttlSeconds: 0
+    steps: []
+    invoke:
+      throws: "ttlSeconds must be a positive integer"
+
+  - name: member already in group (idempotent, no TTL)
     params:
       baseDN: DC=corp,DC=example,DC=com
       samAccountName: jdoe
@@ -64,7 +189,7 @@ scenarios:
           operation: search
           baseDN: DC=corp,DC=example,DC=com
           scope: sub
-          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=jdoe))"
           attributes: ["distinguishedName"]
         fixture: fixtures/200-user-found.ldap
       - ldap:
@@ -82,13 +207,14 @@ scenarios:
     invoke:
       returns:
         status: success
+        memberDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
         userDN: CN=testuser,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai
         groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
         added: false
-        message: User is already a member of the group
+        message: Member is already a member of the group
         address: ldaps://ad.corp.example.com:636
 
-  - name: user not found
+  - name: member not found
     params:
       baseDN: DC=corp,DC=example,DC=com
       samAccountName: nonexistent
@@ -103,14 +229,14 @@ scenarios:
           operation: search
           baseDN: DC=corp,DC=example,DC=com
           scope: sub
-          filter: "(&(objectClass=user)(sAMAccountName=nonexistent))"
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=nonexistent))"
           attributes: ["distinguishedName"]
         fixture: fixtures/200-user-not-found.ldap
       - ldap:
           operation: unbind
         fixture: fixtures/200-unbind-success.ldap
     invoke:
-      throws: "User not found with sAMAccountName: nonexistent"
+      throws: "Member not found with sAMAccountName: nonexistent"
 
   - name: authentication failed
     params:
@@ -141,6 +267,7 @@ scenarios:
         status: dry_run_completed
         baseDN: DC=corp,DC=example,DC=com
         samAccountName: jdoe
+        memberDN: null
         userDN: null
         groupDN: CN=Test Group,OU=Groups,DC=corp,DC=example,DC=com
         added: false
@@ -169,7 +296,7 @@ scenarios:
           operation: search
           baseDN: DC=corp,DC=example,DC=com
           scope: sub
-          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=jdoe))"
           attributes: ["distinguishedName"]
         fixture: fixtures/200-user-found.ldap
       - ldap:
@@ -185,7 +312,7 @@ scenarios:
           operation: unbind
         fixture: fixtures/200-unbind-success.ldap
     invoke:
-      throws: "Failed to add user to group"
+      throws: "Failed to add member to group"
 
   - name: insufficient permissions
     params:
@@ -202,7 +329,7 @@ scenarios:
           operation: search
           baseDN: DC=corp,DC=example,DC=com
           scope: sub
-          filter: "(&(objectClass=user)(sAMAccountName=jdoe))"
+          filter: "(&(|(objectClass=user)(objectClass=group))(sAMAccountName=jdoe))"
           attributes: ["distinguishedName"]
         fixture: fixtures/200-user-found.ldap
       - ldap:
@@ -218,4 +345,4 @@ scenarios:
           operation: unbind
         fixture: fixtures/200-unbind-success.ldap
     invoke:
-      throws: "Failed to add user to group"
+      throws: "Failed to add member to group"
