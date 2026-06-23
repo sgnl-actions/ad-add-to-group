@@ -253,7 +253,7 @@ scenarios:
           operation: unbind
         fixture: fixtures/200-unbind-success.ldap
     invoke:
-      throws: "Failed to bind to LDAP server"
+      throws: "INVALID_CREDENTIALS"
 
   - name: dry run mode
     params:
@@ -312,7 +312,7 @@ scenarios:
           operation: unbind
         fixture: fixtures/200-unbind-success.ldap
     invoke:
-      throws: "Failed to add member to group"
+      throws: "NO_SUCH_OBJECT"
 
   - name: insufficient permissions
     params:
@@ -345,4 +345,4 @@ scenarios:
           operation: unbind
         fixture: fixtures/200-unbind-success.ldap
     invoke:
-      throws: "Failed to add member to group"
+      throws: "INSUFFICIENT_ACCESS_RIGHTS"
