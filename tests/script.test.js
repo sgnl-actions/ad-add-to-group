@@ -1,13 +1,8 @@
 import { jest } from '@jest/globals';
+import { ldaptsMock } from '@sgnl-actions/testing/ldap-scenarios';
 
-// Mock ldapts module BEFORE importing runLDAPScenarios
-jest.unstable_mockModule('ldapts', () => ({
-  Client: jest.fn(),
-  Change: jest.fn(),
-  Attribute: jest.fn()
-}));
+jest.unstable_mockModule('ldapts', ldaptsMock);
 
-// Now import and run
 const { runLDAPScenarios } = await import('@sgnl-actions/testing/ldap-scenarios');
 
 runLDAPScenarios({

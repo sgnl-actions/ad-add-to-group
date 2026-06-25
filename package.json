@@ -27,14 +27,14 @@
   "author": "SGNL Engineering",
   "license": "MIT",
   "dependencies": {
-    "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.8",
+    "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.9",
     "ldapts": "^7.3.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@sgnl-actions/eslint-config": "github:sgnl-actions/eslint-config#23c69696e28fbf34e7eadb12a56cda5f491c282a",
     "@sgnl-actions/rollup-config": "github:sgnl-actions/rollup-config#f94654e450f82042ad8268ac69d79e03889031ee",
-    "@sgnl-actions/testing": "github:sgnl-actions/testing#v1.0.2",
+    "@sgnl-actions/testing": "github:sgnl-actions/testing#v1.0.6",
     "@sgnl-actions/validate": "github:sgnl-actions/validate#1392b07e0c1563e729d68d2eec328ee8e03e0783",
     "eslint": "^10.0.0",
     "generate-license-file": "^4.1.1",
@@ -44,6 +44,9 @@
   },
   "overrides": {
     "serialize-javascript": ">=7.0.5",
-    "uuid": ">=11.1.1"
+    "uuid": ">=11.1.1",
+    "generate-license-file": {
+      "minipass-fetch": "5.0.2"
+    }
   }
 }
