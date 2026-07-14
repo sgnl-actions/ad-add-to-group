@@ -14,8 +14,7 @@ import script from '../src/script.mjs';
 // Read configuration from environment variables (set in ../.env)
 const mockContext = {
   environment: {
-    ADDRESS: process.env.ADDRESS || 'ldap://localhost:389',
-    TLS_SKIP_VERIFY: process.env.TLS_SKIP_VERIFY || 'false'
+    ADDRESS: process.env.ADDRESS || 'ldap://localhost:389'
   },
   secrets: {
     BASIC_USERNAME: process.env.BASIC_USERNAME || '',
@@ -31,7 +30,8 @@ const mockParams = {
   baseDN: process.env.BASE_DN || 'DC=corp,DC=example,DC=com',
   samAccountName: process.env.SAM_ACCOUNT_NAME || 'jsmith',
   groupDN: process.env.GROUP_DN || 'CN=Engineering Team,OU=Groups,DC=corp,DC=example,DC=com',
-  dry_run: process.env.DRY_RUN === 'true'
+  dry_run: process.env.DRY_RUN === 'true',
+  tlsSkipVerify: process.env.TLS_SKIP_VERIFY === 'true'
 };
 
 // Optional: TTL for AD temporary group membership. Only include when set so the

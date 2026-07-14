@@ -193,7 +193,7 @@ export default {
     // For ldap:// (plain text) connections, TLS options cause connection failures
     if (address.startsWith('ldaps://')) {
       clientOptions.tlsOptions = {
-        rejectUnauthorized: context.environment?.TLS_SKIP_VERIFY !== 'true'
+        rejectUnauthorized: params.tlsSkipVerify !== true && params.tlsSkipVerify !== 'true'
       };
     }
 

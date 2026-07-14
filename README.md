@@ -38,7 +38,6 @@ This action uses LDAP Simple Bind authentication with a service account.
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `ADDRESS` | Yes | LDAP server URL | `ldaps://ad.corp.example.com:636` |
-| `TLS_SKIP_VERIFY` | No | Set to `true` to skip TLS certificate verification | `true` |
 
 ### Input Parameters
 
@@ -50,6 +49,7 @@ This action uses LDAP Simple Bind authentication with a service account.
 | `ttlSeconds` | integer | No | Time-to-live in seconds for temporary group membership. See [Temporary Group Membership (TTL)](#temporary-group-membership-ttl). | `3600` |
 | `address` | string | No | Optional LDAP server URL override | `ldaps://ad.corp.example.com:636` |
 | `dry_run` | boolean | No | When true, validates parameters without making changes | `false` |
+| `tlsSkipVerify` | boolean | No | Skip TLS certificate verification (use only for self-signed certificates) | `true` |
 
 ### Output Structure
 
@@ -143,11 +143,11 @@ For environments with self-signed certificates:
   "script_inputs": {
     "baseDN": "DC=corp,DC=example,DC=com",
     "samAccountName": "jdoe",
-    "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
+    "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com",
+    "tlsSkipVerify": true
   },
   "environment": {
-    "ADDRESS": "ldaps://ad.corp.example.com:636",
-    "TLS_SKIP_VERIFY": "true"
+    "ADDRESS": "ldaps://ad.corp.example.com:636"
   },
   "secrets": {
     "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
@@ -219,7 +219,7 @@ Reference: [Privileged Access Management for Active Directory Domain Services â€
 
 - **Authentication**: Uses LDAP Simple Bind with a dedicated service account
 - **Transport Security**: Supports LDAPS (LDAP over TLS) for encrypted connections
-- **TLS Verification**: Certificate verification is enabled by default; `TLS_SKIP_VERIFY` should only be used in development or with self-signed certificates
+- **TLS Verification**: Certificate verification is enabled by default; `tlsSkipVerify` should only be set to true in development or with self-signed certificates
 - **Credential Security**: Bind credentials are provided via secrets and are never logged
 - **Connection Lifecycle**: Connections are unbound in a `finally` block to prevent resource leaks
 - **LDAP Filter Escaping**: Special characters in sAMAccountName are escaped to prevent LDAP injection
@@ -277,7 +277,7 @@ Edit `.env` with your AD credentials:
 ADDRESS=ldap://your-dc.example.com:389
 BASIC_USERNAME=CN=admin,DC=example,DC=com
 BASIC_PASSWORD=your-password
-TLS_SKIP_VERIFY=false
+TLS_SKIP_VERIFY=false  # Used as tlsSkipVerify input parameter
 
 # Test parameters - customize as needed
 BASE_DN=DC=corp,DC=example,DC=com
@@ -335,7 +335,7 @@ npm run dev
 
 10. **TLS/SSL connection errors**
     - Verify the LDAP server is accessible on the configured port
-    - For LDAPS, ensure the server certificate is trusted or set `TLS_SKIP_VERIFY=true` for testing
+    - For LDAPS, ensure the server certificate is trusted or set `tlsSkipVerify: true` in inputs for testing
     - Check that the correct port is used (389 for LDAP, 636 for LDAPS)
 
 ### Testing Group Membership
