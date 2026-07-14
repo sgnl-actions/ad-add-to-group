@@ -36,6 +36,11 @@ inputs:
       min: 1
       max: 500
 
+  tlsSkipVerify:
+    type: boolean
+    description: Skip TLS certificate verification (use only for self-signed certificates)
+    required: false
+
   ttlSeconds:
     type: number
     description: Optional time-to-live in seconds for temporary group membership. When set, AD automatically removes the membership after the TTL elapses. Requires Forest Functional Level Windows Server 2016+ and the "Privileged Access Management Feature" to be enabled. Fails if the member is already in the group.
@@ -94,10 +99,6 @@ environment:
   ADDRESS:
     type: text
     description: LDAP server URL
-    required: false
-  TLS_SKIP_VERIFY:
-    type: text
-    description: Skip TLS certificate verification (set to 'true' to disable)
     required: false
 
 secrets:
