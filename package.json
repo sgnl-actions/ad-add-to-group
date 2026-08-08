@@ -39,7 +39,7 @@
     "eslint": "^10.0.0",
     "generate-license-file": "^4.1.1",
     "jest": "^30.0.5",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.0",
     "rollup": "^4.59.0"
   },
   "overrides": {
